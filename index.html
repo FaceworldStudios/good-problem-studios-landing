@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Good Problem Studios</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:         #f3f2ee;
+      --ink:        #1a1a1a;
+      --ink-mid:    #555;
+      --ink-dim:    #aaa;
+      --ink-faint:  #d4d3cf;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Space Grotesk', sans-serif;
+      cursor: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Trail canvas ────────────────────────────── */
+    #trail-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Canvas ─────────────────────────────────── */
+    #globe-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    /* ── Particle canvas (above globe, below grain) ─ */
+    #particle-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* ── Grain overlay ───────────────────────────── */
+    #grain {
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      opacity: 0.055;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 180px 180px;
+      mix-blend-mode: overlay;
+    }
+
+    /* ── Custom cursor ───────────────────────────── */
+    #cursor {
+      position: fixed;
+      pointer-events: none;
+      z-index: 200;
+      transform: translate(-50%, -50%);
+      transition: transform 0.05s;
+    }
+    #cursor svg { display: block; }
+
+    /* ── Corner brackets ─────────────────────────── */
+    .bracket {
+      position: fixed;
+      width: 22px; height: 22px;
+      z-index: 20;
+      pointer-events: none;
+    }
+    .bracket.tl { top: 20px; left: 20px;   border-top: 1px solid var(--ink-dim); border-left: 1px solid var(--ink-dim); }
+    .bracket.tr { top: 20px; right: 20px;  border-top: 1px solid var(--ink-dim); border-right: 1px solid var(--ink-dim); }
+    .bracket.bl { bottom: 20px; left: 20px;  border-bottom: 1px solid var(--ink-dim); border-left: 1px solid var(--ink-dim); }
+    .bracket.br { bottom: 20px; right: 20px; border-bottom: 1px solid var(--ink-dim); border-right: 1px solid var(--ink-dim); }
+
+    /* ── Scan line ───────────────────────────────── */
+    #scanline {
+      position: fixed; left: 0; width: 100%; height: 1px;
+      background: linear-gradient(to right, transparent 10%, rgba(26,26,26,0.05) 50%, transparent 90%);
+      z-index: 5;
+      animation: scan 10s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes scan { from { top: -2px; } to { top: 102vh; } }
+
+    /* ── UI layer ────────────────────────────────── */
+    #ui {
+      position: fixed; inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: flex; flex-direction: column;
+      padding: 32px 40px;
+    }
+
+    /* Header */
+    #header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    #logo {
+      display: flex;
+      align-items: center;
+    }
+
+    #gps-logo {
+      display: block;
+      flex-shrink: 0;
+    }
+
+    #status-block {
+      font-family: 'Space Mono', monospace;
+      font-size: 8.5px;
+      letter-spacing: .14em;
+      color: var(--ink-dim);
+      text-transform: uppercase;
+      text-align: right;
+      line-height: 2.2;
+    }
+    #status-block .live {
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .blinker {
+      width: 5px; height: 5px;
+      background: var(--ink);
+      border-radius: 50%;
+      display: inline-block;
+      animation: blink 1.6s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.1} }
+
+    /* Center */
+    #center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 10px;
+    }
+
+    #headline {
+      font-size: clamp(30px, 4.5vw, 62px);
+      font-weight: 300;
+      letter-spacing: -.01em;
+      line-height: 1.12;
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 1.2s cubic-bezier(.16,1,.3,1), transform 1.2s cubic-bezier(.16,1,.3,1);
+    }
+    #headline em { font-style: italic; font-weight: 500; }
+    #headline.show { opacity: 1; transform: translateY(0); }
+
+    #tagline {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(8px, 1vw, 10px);
+      letter-spacing: .28em;
+      text-transform: uppercase;
+      color: var(--ink-mid);
+      opacity: 0;
+      transition: opacity 1s .4s;
+    }
+    #tagline.show { opacity: 1; }
+
+    #divider {
+      width: 40px; height: 1px;
+      background: var(--ink-faint);
+      margin: 4px auto;
+      opacity: 0;
+      transition: opacity 1s .7s;
+    }
+    #divider.show { opacity: 1; }
+
+    #hint {
+      font-family: 'Space Mono', monospace;
+      font-size: 8px;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+      opacity: 0;
+      transition: opacity 1s 1.4s;
+    }
+    #hint.show { opacity: 1; }
+
+    /* Footer */
+    #footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .data-block {
+      font-family: 'Space Mono', monospace;
+      line-height: 2;
+    }
+    .data-label {
+      font-size: 8px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    .data-value {
+      font-size: 11px;
+      letter-spacing: .08em;
+      color: var(--ink);
+    }
+    /* Coordinate lock flicker on release */
+    @keyframes coord-lock {
+      0%   { opacity: 0.2; }
+      18%  { opacity: 1; }
+      36%  { opacity: 0.3; }
+      55%  { opacity: 1; }
+      72%  { opacity: 0.6; }
+      100% { opacity: 1; }
+    }
+    .data-value.val-flash { animation: coord-lock 0.7s ease forwards; }
+
+    #signal-strength {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      margin-top: 6px;
+    }
+    .bar {
+      width: 4px;
+      background: var(--ink);
+      border-radius: 1px;
+      opacity: .15;
+      transition: opacity .3s, height .3s;
+    }
+    .bar.active { opacity: 1; }
+    .bar1 { height: 6px; }
+    .bar2 { height: 10px; }
+    .bar3 { height: 14px; }
+    .bar4 { height: 18px; }
+    .bar5 { height: 22px; }
+
+    /* ── Toast ───────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 52px; left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+      background: var(--ink);
+      color: var(--bg);
+      padding: 12px 28px;
+      pointer-events: none;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity .25s;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Note label ──────────────────────────────── */
+    #note-display {
+      position: fixed;
+      bottom: 38px; left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: .22em;
+      color: var(--ink-dim);
+      text-transform: uppercase;
+      pointer-events: none;
+      z-index: 20;
+      opacity: 0;
+      transition: opacity .4s;
+    }
+    #note-display.show { opacity: 1; }
+
+    /* Fade in logo/ui on load */
+    #ui { opacity: 0; transition: opacity .8s .2s; }
+    #ui.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- Corner brackets -->
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+
+  <!-- Scanline -->
+  <div id="scanline"></div>
+
+  <!-- Gradient trail canvas (behind globe) -->
+  <canvas id="trail-canvas"></canvas>
+
+  <!-- Particle canvas (city dot trails — sits above globe) -->
+  <canvas id="particle-canvas"></canvas>
+
+  <!-- Grain texture overlay -->
+  <div id="grain"></div>
+
+  <!-- Globe canvas -->
+  <canvas id="globe-canvas"></canvas>
+
+  <!-- Custom cursor -->
+  <div id="cursor">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="16" y1="0" x2="16" y2="32" stroke="#1a1a1a" stroke-width="0.8" opacity="0.5"/>
+      <line x1="0" y1="16" x2="32" y2="16" stroke="#1a1a1a" stroke-width="0.8" opacity="0.5"/>
+      <circle cx="16" cy="16" r="4" stroke="#1a1a1a" stroke-width="0.8" fill="none"/>
+      <circle cx="16" cy="16" r="1.5" fill="#1a1a1a"/>
+    </svg>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast">LOCATION ACQUIRED</div>
+
+  <!-- Note label -->
+  <div id="note-display">— · —</div>
+
+  <!-- UI -->
+  <div id="ui">
+    <div id="header">
+      <div id="logo">
+        <svg id="gps-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 584.33 340.04" width="48" height="28" aria-label="Good Problem Studios"><g><path d="M172.61,4.88v93.37h-8.37c-1.96-9.64-4.7-19.34-8.03-28.62-8.59-23.93-22.39-50.17-52.33-45.95-37.04,5.22-38.02,67.95-39.39,96.16-1.74,35.81-2.03,74.32.34,110.1,1.63,24.55,5.94,84.27,41.33,82.49,23.02-1.16,28.4-27,28.3-45.66l-.02-83.18h-27.45v-21.75h78.32v165.32c7.45-4.24,12.02-12.31,13.3-20.67.44-2.86.3-5.74.78-8.59-.13-76.64.05-153.33,0-229.58,0-11.75.51-24.89-.35-36.49-.7-9.39-6.14-18.87-15.73-21.26v-5.19c0-.92,2.81-.17,3.5-.15,35.87.99,71.9-.78,107.79-.01,39.22,2.26,68.72,29.59,75.71,67.87,8.43,46.17-8.95,99.02-55.87,115.94-13.35,4.81-25.85,5.54-39.94,5.61-5.96.03-12.43-1.02-18.41-.37-1.77.19-.83,1.11-.8,2.51.55,31.08-.26,62.34-.37,93.37-.02,7.3-.09,16.23,2.35,23.11,2.72,7.68,8.57,12.51,16.27,14.87l-.18,7.56-92.41-.02-16.88-34.63c-12.31,21.65-34.2,37.35-59.58,38.82-62.6,3.62-90.94-52.5-99.52-105.64C-3.22,183.46-2.83,108.84,17.92,61.21S78.14-8.41,128.43,2.7c9.75,2.15,16.75,6.21,25.68,9.13,4.39,1.43,7.44-.26,10.8-3.1,2.72-2.29,3.24-4.78,7.69-3.85ZM255.28,172.21c10.05-.47,20.6,1.41,30.21-2.09,29.44-10.71,29.32-58.15,28.35-83.74-.6-15.69-1.81-35.68-12.38-48.19-12.08-14.3-29.59-9.86-46.18-10.55v144.57Z"/><path d="M520.37,4.88v93.37h-7.7c-.39-2.62-1.08-5.22-1.77-7.77-6.71-25.02-20.06-67.41-51.27-69.22-25.78-1.49-33.96,21.39-30.93,43.31,2.51,18.11,13.98,34.23,25.4,47.89,26.13,31.26,63.49,62.15,75.47,102.25,11.03,36.91,4.47,85.07-27.65,109.56-30.5,23.26-76.5,18.56-108.25.26l-10.69,11.67-4.2.32-3.01-106.76h9.04c6.56,26.36,16.32,58.11,37.31,76.65,22.14,19.54,51.38,12.67,58.99-16.67s-3.11-54.24-20-76.19c-31.51-40.95-80.07-72.14-82.34-129.18-2.52-63.53,51.16-99.06,110.12-78.31,4.22,1.48,10.57,5.17,14.4,6.01,4.2.93,7.94-1.88,10.89-4.51.61-.55,1.88-2.38,2.16-2.52.98-.48,2.89,0,4.02-.16Z"/><path d="M557.12,2.97c22.8-1.28,35.87,25.94,20.66,43.08-10.9,12.28-30.24,11.92-40.14-1.37-12.42-16.66-1.14-40.54,19.48-41.7ZM556.78,8.66c-27.91,2.68-20.62,47.55,7.1,39.56,22.58-6.51,16.31-41.8-7.1-39.56Z"/><path d="M570.58,42.7h-6.69l-6-12.57c-.78-.89-2.6-.35-3.7-.48v13.39h-5.86l-.5-.5V15.59h16.57c1.73,0,4.79,3.17,5.11,4.93.88,4.81-.93,7.53-5.27,9.31l6.35,12.86ZM554.18,26.97h6.86c1.3,0,2.82-2.26,2.87-3.52s-1.27-3.51-2.53-3.51h-7.2v7.03Z"/></g></svg>
+      </div>
+
+      <div id="status-block">
+        <div class="live"><span class="blinker"></span> Signal Active</div>
+        <div id="utc-time">00:00:00 UTC</div>
+      </div>
+    </div>
+
+    <div id="center">
+      <div id="headline">We help <em>artists</em><br>find their way.</div>
+      <div id="tagline">Good Problem Studios &nbsp;·&nbsp; Navigating Sound</div>
+      <div id="divider"></div>
+      <div id="hint"></div>
+    </div>
+
+    <div id="footer">
+      <div class="data-block">
+        <div class="data-label">Latitude</div>
+        <div class="data-value" id="lat-val">0.0000°</div>
+        <div class="data-label" style="margin-top:8px">Longitude</div>
+        <div class="data-value" id="lon-val">0.0000°</div>
+      </div>
+
+      <div class="data-block" style="text-align:right">
+        <div class="data-label">Signal</div>
+        <div id="signal-strength">
+          <div class="bar bar1 active"></div>
+          <div class="bar bar2 active"></div>
+          <div class="bar bar3 active"></div>
+          <div class="bar bar4"></div>
+          <div class="bar bar5"></div>
+        </div>
+        <div class="data-label" style="margin-top:8px; font-size:8px" id="note-name">A3</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ── Gradient trail ──────────────────────────────────
+    const trailCanvas = document.getElementById('trail-canvas');
+    const tCtx = trailCanvas.getContext('2d');
+
+    function resizeTrail() {
+      trailCanvas.width  = innerWidth;
+      trailCanvas.height = innerHeight;
+    }
+    resizeTrail();
+    addEventListener('resize', resizeTrail);
+
+    const blobs = [];
+    const MAX_BLOBS = 72;
+    let trailHue = 270 + Math.random() * 60; // start in violet-pink range
+    let lastSpawnMs  = 0;
+
+    // Ripple rings (drawn on trail canvas)
+    const ripples = [];
+
+    // City dot particle trails — rendered on a separate canvas ABOVE the globe
+    const particleCanvas = document.getElementById('particle-canvas');
+    const pCtx = particleCanvas.getContext('2d');
+    function resizeParticle() {
+      particleCanvas.width  = innerWidth;
+      particleCanvas.height = innerHeight;
+    }
+    resizeParticle();
+    addEventListener('resize', resizeParticle);
+
+    const cityParticles = [];
+    const MAX_CITY_PARTICLES = 120;
+    const _tv = new THREE.Vector3(); // reusable scratch vector
+
+    function spawnBlob(x, y, ambientScale) {
+      if (blobs.length >= MAX_BLOBS) blobs.shift();
+      const sc = ambientScale || 1;
+      const r  = (140 + Math.random() * 110) * sc;
+      blobs.push({
+        x, y,
+        rx:   r,
+        ry:   r * (0.58 + Math.random() * 0.42),   // slight ellipse
+        rot:  Math.random() * Math.PI * 2,
+        h1:   trailHue,
+        h2:   (trailHue + 38 + Math.random() * 48) % 360,
+        sat:  78 + Math.random() * 16,
+        lit:  62 + Math.random() * 14,
+        peak: (0.38 + Math.random() * 0.20) * sc,
+        vx:   (Math.random() - 0.5) * 0.20,
+        vy:   (Math.random() - 0.5) * 0.20,
+        life:  0,
+        speed: 0.0035 + Math.random() * 0.0028   // 4–6 s lifetime @ 60 fps
+      });
+      trailHue = (trailHue + 24 + Math.random() * 34) % 360;
+    }
+
+    // ── Release burst — radial scatter of blobs ──────────
+    function spawnBurst(x, y) {
+      const count = 11;
+      for (let i = 0; i < count; i++) {
+        if (blobs.length >= MAX_BLOBS) blobs.shift();
+        const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.55;
+        const spd   = 1.1 + Math.random() * 1.6;
+        const r     = 85 + Math.random() * 85;
+        blobs.push({
+          x, y,
+          rx:   r,
+          ry:   r * (0.55 + Math.random() * 0.45),
+          rot:  Math.random() * Math.PI * 2,
+          h1:   trailHue,
+          h2:   (trailHue + 42 + Math.random() * 52) % 360,
+          sat:  82 + Math.random() * 14,
+          lit:  58 + Math.random() * 16,
+          peak: 0.55 + Math.random() * 0.25,   // brighter than trail
+          vx:   Math.cos(angle) * spd,
+          vy:   Math.sin(angle) * spd,
+          life:  0,
+          speed: 0.009 + Math.random() * 0.006  // ~1.8–3s, quick burst
+        });
+        trailHue = (trailHue + 26 + Math.random() * 30) % 360;
+      }
+    }
+
+    // ── Release ripple — concentric rings from globe centre ─
+    function spawnRipple() {
+      const cx = innerWidth  / 2;
+      const cy = innerHeight / 2;
+      for (let i = 0; i < 3; i++) {
+        ripples.push({
+          x: cx, y: cy,
+          maxR:  Math.min(innerWidth, innerHeight) * (0.28 + i * 0.10),
+          life:  0,
+          delay: i * 0.16,   // stagger each ring
+          alpha: 0.20 - i * 0.05
+        });
+      }
+    }
+
+    // ── City dot particles — seed on drag ────────────────
+    const PARTICLE_CHARS = ['+', '·', '+', '·', '×']; // weighted to + and ·
+    function maybeSeedCityParticles() {
+      if (!dragging) return;
+      CITIES.forEach(([lat, lon]) => {
+        if (Math.random() > (isMobile ? 0.10 : 0.22)) return; // fewer particles on mobile
+
+        // Is this city facing the camera? (world-space normal z > 0)
+        _tv.copy(latLonToVec3(lat, lon, 1)).transformDirection(globe.matrixWorld);
+        if (_tv.z < 0.1) return; // facing away or on horizon
+
+        // Project surface position to screen coords
+        _tv.copy(latLonToVec3(lat, lon, 1.015)).applyMatrix4(globe.matrixWorld).project(camera);
+        const sx = ( _tv.x * 0.5 + 0.5) * innerWidth;
+        const sy = (-_tv.y * 0.5 + 0.5) * innerHeight;
+
+        if (cityParticles.length >= MAX_CITY_PARTICLES) cityParticles.shift();
+        const angle = Math.random() * Math.PI * 2;
+        const spd   = 0.38 + Math.random() * 0.55; // wider scatter
+        cityParticles.push({
+          x: sx, y: sy,
+          vx:    Math.cos(angle) * spd,
+          vy:    Math.sin(angle) * spd - 0.14,
+          life:  0,
+          speed: 0.004 + Math.random() * 0.004,
+          char:  PARTICLE_CHARS[Math.floor(Math.random() * PARTICLE_CHARS.length)],
+          size:  7 + Math.floor(Math.random() * 5),
+          hue:   (trailHue + Math.random() * 40) % 360,
+          sat:   78 + Math.random() * 18,
+          lit:   48 + Math.random() * 16
+        });
+        trailHue = (trailHue + 18 + Math.random() * 28) % 360;
+      });
+    }
+
+    function drawTrail() {
+      tCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+      for (let i = blobs.length - 1; i >= 0; i--) {
+        const b = blobs[i];
+        b.life += b.speed;
+        b.x += b.vx;
+        b.y += b.vy;
+        if (b.life >= 1) { blobs.splice(i, 1); continue; }
+
+        // Fade in fast (first 12%), then slowly dissolve
+        const a = b.life < 0.12
+          ? (b.life / 0.12) * b.peak
+          : b.peak * Math.max(0, 1 - (b.life - 0.12) / 0.88);
+
+        // Size tapers as blob ages — full at birth, ~15% at end of life
+        const sScale = Math.max(0.15, 1 - b.life * 0.85);
+
+        tCtx.save();
+        tCtx.globalAlpha = a;
+        tCtx.translate(b.x, b.y);
+        tCtx.rotate(b.rot);
+        tCtx.scale(sScale, (b.ry / b.rx) * sScale);
+
+        const g = tCtx.createRadialGradient(0, 0, 0, 0, 0, b.rx);
+        g.addColorStop(0,   `hsl(${b.h1}, ${b.sat}%, ${b.lit}%)`);
+        g.addColorStop(0.5, `hsl(${b.h2}, ${b.sat - 6}%, ${b.lit + 5}%)`);
+        g.addColorStop(1,   `hsla(${b.h1}, ${b.sat}%, ${b.lit}%, 0)`);
+
+        tCtx.fillStyle = g;
+        tCtx.beginPath();
+        tCtx.arc(0, 0, b.rx, 0, Math.PI * 2);
+        tCtx.fill();
+        tCtx.restore();
+      }
+
+      // Draw expanding ripple rings
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i];
+        rp.life += 0.010;
+        if (rp.life < rp.delay) continue;
+        const prog = Math.min(1, (rp.life - rp.delay) / 1.1);
+        if (prog >= 1) { ripples.splice(i, 1); continue; }
+        const r = rp.maxR * prog;
+        const a = rp.alpha * (1 - prog) * (prog < 0.06 ? prog / 0.06 : 1);
+        tCtx.save();
+        tCtx.strokeStyle = `rgba(26, 26, 26, ${a})`;
+        tCtx.lineWidth = 0.8;
+        tCtx.beginPath();
+        tCtx.arc(rp.x, rp.y, r, 0, Math.PI * 2);
+        tCtx.stroke();
+        tCtx.restore();
+      }
+
+    }
+
+    function drawCityParticles() {
+      pCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+      if (cityParticles.length === 0) return;
+      pCtx.textAlign    = 'center';
+      pCtx.textBaseline = 'middle';
+      for (let i = cityParticles.length - 1; i >= 0; i--) {
+        const p = cityParticles[i];
+        p.life += p.speed;
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.life >= 1) { cityParticles.splice(i, 1); continue; }
+        // Near-instant pop to full, then long slow fade
+        const a = p.life < 0.06
+          ? (p.life / 0.06) * 0.90          // snap to full in first 6%
+          : 0.90 * Math.max(0, 1 - (p.life - 0.06) / 0.94); // slow fade
+        pCtx.save();
+        pCtx.globalAlpha = a;
+        pCtx.font = `${p.size}px 'Space Mono', monospace`;
+        pCtx.fillStyle = `hsl(${p.hue}, ${p.sat}%, ${p.lit}%)`;
+        pCtx.fillText(p.char, p.x, p.y);
+        pCtx.restore();
+      }
+    }
+
+    // ── Renderer ────────────────────────────────────────
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+                     || innerWidth < 768;
+
+    const canvas = document.getElementById('globe-canvas');
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias:       !isMobile, // antialias + high-DPI = context loss on mobile
+      alpha:           true,
+      powerPreference: 'low-power'
+    });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1 : 2));
+    renderer.setClearColor(0x000000, 0);
+
+    // Recover from WebGL context loss (common on mobile when tab is backgrounded)
+    canvas.addEventListener('webglcontextlost',    e  => e.preventDefault(), false);
+    canvas.addEventListener('webglcontextrestored', () => location.reload(),  false);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+    camera.position.z = 2.6;
+
+    function resize() {
+      // Use visualViewport when available — avoids the iOS address-bar jump
+      const W = (window.visualViewport ? window.visualViewport.width  : innerWidth);
+      const H = (window.visualViewport ? window.visualViewport.height : innerHeight);
+      renderer.setSize(W, H);
+      camera.aspect = W / H;
+      camera.updateProjectionMatrix();
+      // Keep 2D canvases in sync
+      trailCanvas.width    = W; trailCanvas.height    = H;
+      particleCanvas.width = W; particleCanvas.height = H;
+    }
+    resize();
+    addEventListener('resize', resize);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+    // ── Globe group ─────────────────────────────────────
+    const globe = new THREE.Group();
+    scene.add(globe);
+
+    // Helpers
+    function latLonToVec3(lat, lon, r = 1) {
+      const phi   = (90 - lat)  * Math.PI / 180;
+      const theta = (lon + 180) * Math.PI / 180;
+      return new THREE.Vector3(
+        -r * Math.sin(phi) * Math.cos(theta),
+         r * Math.cos(phi),
+         r * Math.sin(phi) * Math.sin(theta)
+      );
+    }
+
+    // Inner fill sphere
+    const fillMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.992, 64, 64),
+      new THREE.MeshBasicMaterial({ color: 0xf3f2ee, transparent: true, opacity: 0.55 })
+    );
+    globe.add(fillMesh);
+
+    // Lat lines
+    function addLatLine(latDeg, segments, opacity) {
+      const pts = [];
+      const lat = latDeg * Math.PI / 180;
+      for (let i = 0; i <= segments; i++) {
+        const lon = (i / segments) * Math.PI * 2;
+        pts.push(new THREE.Vector3(
+          Math.cos(lat) * Math.cos(lon),
+          Math.sin(lat),
+          Math.cos(lat) * Math.sin(lon)
+        ));
+      }
+      globe.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity })
+      ));
+    }
+
+    // Lon lines
+    function addLonLine(lonDeg, segments, opacity) {
+      const pts = [];
+      const lon = lonDeg * Math.PI / 180;
+      for (let i = 0; i <= segments; i++) {
+        const lat = ((i / segments) - 0.5) * Math.PI;
+        pts.push(new THREE.Vector3(
+          Math.cos(lat) * Math.cos(lon),
+          Math.sin(lat),
+          Math.cos(lat) * Math.sin(lon)
+        ));
+      }
+      globe.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity })
+      ));
+    }
+
+    for (let lat = -80; lat <= 80; lat += 15) {
+      addLatLine(lat, 128, lat === 0 ? 0.28 : 0.09);
+    }
+    for (let lon = 0; lon < 360; lon += 15) {
+      addLonLine(lon, 128, (lon === 0 || lon === 180) ? 0.28 : 0.09);
+    }
+
+    // Outer wireframe
+    globe.add(new THREE.Mesh(
+      new THREE.SphereGeometry(1, 64, 64),
+      new THREE.MeshBasicMaterial({ color: 0x1a1a1a, wireframe: true, transparent: true, opacity: 0.04 })
+    ));
+
+    // ── Ripple overlay sphere ──────────────────────────────
+    // ShaderMaterial sphere slightly larger than globe.
+    // Shows expanding ring of color from a city click point.
+    const rippleUniforms = {
+      uOrigin:   { value: new THREE.Vector3(0, 0, 0) },
+      uProgress: { value: -1.0 },  // -1 = inactive
+      uColor1:   { value: new THREE.Color(0xff6b35) },
+      uColor2:   { value: new THREE.Color(0x00b4d8) },
+      uColor3:   { value: new THREE.Color(0xc77dff) },
+    };
+
+    const rippleMat = new THREE.ShaderMaterial({
+      uniforms: rippleUniforms,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.FrontSide,
+      vertexShader: `
+        varying vec3 vLocalPos;
+        void main() {
+          vLocalPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3  uOrigin;
+        uniform float uProgress;
+        uniform vec3  uColor1;
+        uniform vec3  uColor2;
+        uniform vec3  uColor3;
+        varying vec3  vLocalPos;
+
+        void main() {
+          if (uProgress < 0.0) discard;
+
+          // Angular distance from origin on unit sphere — both in local/object space
+          vec3 nPos = normalize(vLocalPos);
+          vec3 nOri = normalize(uOrigin);
+          float angDist = acos(clamp(dot(nPos, nOri), -1.0, 1.0));
+
+          // The wave front: expands from 0 to PI (full sphere)
+          float waveFront = uProgress * 3.14159;
+          float dist = abs(angDist - waveFront);
+
+          // Ring width narrows slightly as it expands, with soft leading/trailing edges
+          float ringWidth = 0.18 + 0.12 * (1.0 - uProgress);
+          float ring = smoothstep(ringWidth, 0.0, dist);
+
+          // Color blend — shifts hue as wave propagates
+          float colorPhase = fract(angDist * 0.6 + uProgress * 1.5);
+          vec3 col;
+          if (colorPhase < 0.33) {
+            col = mix(uColor1, uColor2, colorPhase / 0.33);
+          } else if (colorPhase < 0.66) {
+            col = mix(uColor2, uColor3, (colorPhase - 0.33) / 0.33);
+          } else {
+            col = mix(uColor3, uColor1, (colorPhase - 0.66) / 0.34);
+          }
+
+          // Bright leading edge, softer trail
+          float leading = smoothstep(ringWidth * 0.6, 0.0, dist) * 0.3;
+
+          // Fade as wave wraps to antipode and overall decay
+          float fade = 1.0 - smoothstep(0.6, 1.0, uProgress);
+          float alpha = (ring * 0.45 + leading) * fade;
+
+          // Secondary ripple — thinner echo trailing behind
+          float echo = abs(angDist - waveFront * 0.7);
+          float echoRing = smoothstep(0.08, 0.0, echo) * 0.15 * fade;
+          alpha += echoRing;
+
+          gl_FragColor = vec4(col, alpha);
+        }
+      `
+    });
+
+    const rippleSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1.02, 64, 64),
+      rippleMat
+    );
+    globe.add(rippleSphere);
+
+    // Ripple state
+    let rippleActive = false;
+    let rippleTime = 0;
+    const RIPPLE_DURATION = 2.8; // seconds
+
+    function startRipple(cityIdx) {
+      const pos = latLonToVec3(CITIES[cityIdx][0], CITIES[cityIdx][1], 1.02);
+      rippleUniforms.uOrigin.value.copy(pos);
+      rippleUniforms.uProgress.value = 0.0;
+      rippleTime = 0;
+      rippleActive = true;
+
+      // Fully randomized colors — three hues spread at least 60° apart
+      const h1 = Math.random() * 360;
+      const h2 = (h1 + 60 + Math.random() * 180) % 360;
+      const h3 = (h2 + 60 + Math.random() * 180) % 360;
+      rippleUniforms.uColor1.value.setHSL(h1 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
+      rippleUniforms.uColor2.value.setHSL(h2 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
+      rippleUniforms.uColor3.value.setHSL(h3 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
+    }
+
+    function updateRipple(dt) {
+      if (!rippleActive) return;
+      rippleTime += dt;
+      const p = rippleTime / RIPPLE_DURATION;
+      if (p >= 1.0) {
+        rippleActive = false;
+        rippleUniforms.uProgress.value = -1.0;
+        return;
+      }
+      // Ease-out for natural deceleration
+      rippleUniforms.uProgress.value = 1.0 - Math.pow(1.0 - p, 1.8);
+    }
+
+    // City markers
+    const CITIES = [
+      [40.71,-74.01],[51.51,-0.13],[35.68,139.65],[48.86,2.35],
+      [-33.87,151.21],[55.76,37.62],[19.43,-99.13],[-23.55,-46.63],
+      [1.35,103.82],[37.77,-122.42],[28.61,77.21],[6.52,3.38],
+      [-1.29,36.82],[55.68,12.57],[59.33,18.07],
+      // 7 new — improve clustering and fill gaps
+      [52.52,13.41],   // Berlin
+      [34.05,-118.24], // Los Angeles
+      [41.85,-87.65],  // Chicago
+      [37.57,126.98],  // Seoul
+      [31.23,121.47],  // Shanghai
+      [30.04,31.24],   // Cairo
+      [-34.61,-58.38]  // Buenos Aires
+    ];
+
+    const markers = [];
+    const cityHitTargets = [];
+    const raycaster = new THREE.Raycaster();
+    const mouseNDC = new THREE.Vector2();
+
+    CITIES.forEach(([lat, lon], idx) => {
+      const pos = latLonToVec3(lat, lon, 1.015);
+
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.004, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.45 })
+      );
+      dot.position.copy(pos);
+      globe.add(dot);
+
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.013, 0.0015, 6, 32),
+        new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.10 })
+      );
+      ring.position.copy(pos);
+      ring.lookAt(0, 0, 0);
+      globe.add(ring);
+      markers.push({ ring, offset: idx * 0.42 });
+
+      // Invisible hit target for raycasting
+      const hit = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 8, 8),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hit.position.copy(pos);
+      hit.userData.cityIndex = idx;
+      globe.add(hit);
+      cityHitTargets.push(hit);
+    });
+
+    // ── Constellation lines (hidden; animate on release) ──
+    // Lines follow the sphere surface as great-circle arcs (lerp → normalize)
+    // so they never cut through the globe. Only pairs within 42° are connected.
+    const CONSTELL_MAX_DIST = 42;
+
+    function greatArcPts(c1, c2, n) {
+      const a = latLonToVec3(...c1, 1);
+      const b = latLonToVec3(...c2, 1);
+      const pts = [];
+      for (let i = 0; i <= n; i++) {
+        pts.push(new THREE.Vector3().copy(a).lerp(b, i / n).normalize().multiplyScalar(1.019));
+      }
+      return pts;
+    }
+
+    const constellMats = [];
+    const seenPairs    = new Set();
+    CITIES.forEach((c1, i) => {
+      const sorted = CITIES
+        .map((c2, j) => ({ j, d: Math.hypot(c1[0]-c2[0], c1[1]-c2[1]) }))
+        .filter(x => x.j !== i)
+        .sort((a, b) => a.d - b.d);
+      for (let k = 0; k < 2; k++) {
+        if (sorted[k].d > CONSTELL_MAX_DIST) continue;
+        const j   = sorted[k].j;
+        const key = Math.min(i,j) + '_' + Math.max(i,j);
+        if (seenPairs.has(key)) continue;
+        seenPairs.add(key);
+        const pts = greatArcPts(CITIES[i], CITIES[j], 28);
+        const mat = new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0 });
+        globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+        constellMats.push(mat);
+      }
+    });
+    let constellLife = 0; // > 0 while animating
+
+    // ── Drag interaction ────────────────────────────────
+    let dragging = false;
+    let px = 0, py = 0;
+    let velX = 0, velY = 0;
+    let currentLat = 0, currentLon = 0;
+    let dragVelocity = 0;
+    let dragTotal = 0;      // accumulated drag distance since mousedown
+    let lastDragX = 0, lastDragY = 0;
+
+    function onDown(x, y) {
+      dragging = true; px = x; py = y; velX = velY = 0;
+      dragTotal = 0; lastDragX = x; lastDragY = y;
+    }
+    function onUp() {
+      if (dragging && dragTotal > 25) triggerPayoff(lastDragX, lastDragY);
+      dragging = false;
+    }
+
+    function onMove(x, y) {
+      // Custom crosshair cursor
+      const c = document.getElementById('cursor');
+      c.style.left = x + 'px';
+      c.style.top  = y + 'px';
+
+      // Spawn gradient blob — faster when dragging, slower when just hovering
+      const now = Date.now();
+      const interval = dragging ? 55 : 160;
+      if (now - lastSpawnMs > interval) {
+        spawnBlob(x, y);
+        lastSpawnMs = now;
+      }
+
+      if (!dragging) return;
+      const dx = x - px, dy = y - py;
+      velY = dx * 0.006;
+      velX = dy * 0.006;
+      globe.rotation.y += velY;
+      globe.rotation.x += velX;
+      globe.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, globe.rotation.x));
+      px = x; py = y;
+      lastDragX = x; lastDragY = y;
+      dragTotal += Math.sqrt(dx * dx + dy * dy);
+
+      dragVelocity = Math.sqrt(dx * dx + dy * dy);
+      currentLat = -(globe.rotation.x * 180 / Math.PI);
+      currentLon =  (globe.rotation.y * 180 / Math.PI) % 360;
+      document.getElementById('lat-val').textContent = currentLat.toFixed(4) + '°';
+      document.getElementById('lon-val').textContent = currentLon.toFixed(4) + '°';
+
+      updateSignalBars(dragVelocity);
+      playTone(currentLat, dragVelocity);
+    }
+
+    const CITY_NAMES = [
+      'NEW YORK','LONDON','TOKYO','PARIS','SYDNEY','MOSCOW',
+      'MEXICO CITY','SÃO PAULO','SINGAPORE','SAN FRANCISCO',
+      'NEW DELHI','LAGOS','NAIROBI','COPENHAGEN','STOCKHOLM',
+      'BERLIN','LOS ANGELES','CHICAGO','SEOUL','SHANGHAI',
+      'CAIRO','BUENOS AIRES'
+    ];
+
+    function onPing() { playPing(); }
+
+    function handleGlobeClick(cx, cy) {
+      if (dragTotal < 12) {
+        const rect = canvas.getBoundingClientRect();
+        mouseNDC.x = ((cx - rect.left) / rect.width) * 2 - 1;
+        mouseNDC.y = -((cy - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        const hits = raycaster.intersectObjects(cityHitTargets);
+        if (hits.length > 0) {
+          const cityIdx = hits[0].object.userData.cityIndex;
+          startRipple(cityIdx);
+          playRewardSound();
+          showToast(CITY_NAMES[cityIdx]);
+          return;
+        }
+      }
+      onPing();
+    }
+
+    canvas.addEventListener('mousedown', e => onDown(e.clientX, e.clientY));
+    addEventListener('mouseup', e => {
+      const wasClick = dragTotal < 12;
+      onUp();
+      if (wasClick) handleGlobeClick(e.clientX, e.clientY);
+    });
+    addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
+
+    let lastTouchX = 0, lastTouchY = 0;
+    canvas.addEventListener('touchstart', e => {
+      lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+      onDown(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    canvas.addEventListener('touchend', e => {
+      const wasClick = dragTotal < 12;
+      onUp();
+      if (wasClick) handleGlobeClick(lastTouchX, lastTouchY);
+    });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+      onMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+
+    // ── Signal bars ─────────────────────────────────────
+    function updateSignalBars(v) {
+      const n = v < 1 ? 1 : v < 3 ? 2 : v < 6 ? 3 : v < 10 ? 4 : 5;
+      document.querySelectorAll('.bar').forEach((b, i) => {
+        b.classList.toggle('active', i < n);
+      });
+    }
+
+    // ── Web Audio ────────────────────────────────────────
+    // Signal chain: osc → gain → [dryBus + reverbNode] → [dryBus → masterOut]
+    //                                                   → [reverbNode → wetBus → masterOut]
+    let audioCtx = null;
+    let dryBus = null, wetBus = null, reverbNode = null, masterOut = null;
+    let droneGainNode = null;
+    let audioReady = false;
+
+    // A minor pentatonic, two octaves
+    const SCALE      = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 784];
+    const NOTE_NAMES = ['A3','C4','D4','E4','G4','A4','C5','D5','E5','G5'];
+
+    function initAudio() {
+      if (audioReady) return audioCtx;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ac = audioCtx;
+
+      // ── Master output ──────────────────────────────────
+      masterOut = ac.createGain();
+      masterOut.gain.value = 1.0;
+      masterOut.connect(ac.destination);
+
+      // ── Dry bus ────────────────────────────────────────
+      dryBus = ac.createGain();
+      dryBus.gain.value = 0.60;
+      dryBus.connect(masterOut);
+
+      // ── Reverb — synthetic IR, warm organic tail ───────
+      // ~1.8s decay with slight stereo difference for width
+      const dur = 1.8, decay = 2.6;
+      const len = ac.sampleRate * dur;
+      const ir  = ac.createBuffer(2, len, ac.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const ch = ir.getChannelData(c);
+        for (let i = 0; i < len; i++) {
+          ch[i] = (Math.random() * 2 - 1)
+                * Math.pow(1 - i / len, decay)
+                * (c === 0 ? 1 : 0.92); // slight L/R asymmetry → spaciousness
+        }
+      }
+      reverbNode = ac.createConvolver();
+      reverbNode.buffer = ir;
+
+      wetBus = ac.createGain();
+      wetBus.gain.value = 0.40;
+      reverbNode.connect(wetBus);
+      wetBus.connect(masterOut);
+
+      audioReady = true;
+      return ac;
+    }
+
+    // Send a node's output to both dry and reverb buses
+    function sendToMix(srcNode, vol, attackTime, releaseTime, startOffset = 0) {
+      const ac = initAudio();
+      const t0 = ac.currentTime + startOffset;
+      const gn = ac.createGain();
+      srcNode.connect(gn);
+      gn.connect(dryBus);
+      gn.connect(reverbNode);
+      gn.gain.setValueAtTime(0, t0);
+      gn.gain.linearRampToValueAtTime(vol, t0 + attackTime);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t0 + releaseTime);
+      return gn;
+    }
+
+    // ── Drag tones ─────────────────────────────────────────
+    let lastTone = 0;
+    function playTone(lat, velocity) {
+      const now = Date.now();
+      if (now - lastTone < 85 || velocity < 1.5) return;
+      lastTone = now;
+      try {
+        const ac = initAudio();
+        const idx  = Math.floor(((lat + 90) / 180) * SCALE.length) % SCALE.length;
+        const freq = SCALE[idx];
+        document.getElementById('note-name').textContent = NOTE_NAMES[idx];
+
+        const vol = Math.min(0.18, velocity * 0.009);
+
+        // Root — triangle (warm body)
+        const osc = ac.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ac.currentTime);
+        sendToMix(osc, vol, 0.016, 0.65);
+        osc.start(ac.currentTime);
+        osc.stop(ac.currentTime + 0.75);
+
+        // Perfect 5th — sine, softer (adds harmonic warmth without muddiness)
+        const osc5 = ac.createOscillator();
+        osc5.type = 'sine';
+        osc5.frequency.setValueAtTime(freq * 1.5, ac.currentTime);
+        sendToMix(osc5, vol * 0.5, 0.022, 0.50);
+        osc5.start(ac.currentTime);
+        osc5.stop(ac.currentTime + 0.60);
+
+        // Note display
+        const nd = document.getElementById('note-display');
+        nd.textContent = '♩ ' + NOTE_NAMES[idx];
+        nd.classList.add('show');
+        clearTimeout(nd._t);
+        nd._t = setTimeout(() => nd.classList.remove('show'), 900);
+      } catch (_) {}
+    }
+
+    // ── Auto-note during idle rotation ─────────────────────
+    // Reads current globe lat → plays a very soft octave-down note every ~2.6s
+    let lastAutoNote = 0;
+    function maybeAutoNote(ts) {
+      if (dragging || !audioReady) return;
+      if (ts - lastAutoNote < 2600) return;
+      lastAutoNote = ts;
+      try {
+        const ac = initAudio();
+        const lat = -(globe.rotation.x * 180 / Math.PI);
+        const idx  = Math.floor(((lat + 90) / 180) * SCALE.length) % SCALE.length;
+        const freq = SCALE[idx] * 0.5; // Octave down — deeper, like a satellite hum
+
+        const osc = ac.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ac.currentTime);
+        // Tiny drift: organic imperfection
+        osc.frequency.linearRampToValueAtTime(freq * 1.0025, ac.currentTime + 1.2);
+        sendToMix(osc, 0.026, 0.10, 1.6);
+        osc.start(ac.currentTime);
+        osc.stop(ac.currentTime + 1.8);
+      } catch (_) {}
+    }
+
+    // ── Dynamic GPS ping — unique each time ─────────────────
+    // Picks random base note, random interval set, random timing, random contour
+    function playPing() {
+      try {
+        const ac = initAudio();
+
+        // Upper half of scale for ping brightness
+        const baseIdx = 4 + Math.floor(Math.random() * 4);
+
+        // Pull 3 random steps from pentatonic intervals [0,2,4,5,7]
+        const pool = [0, 2, 4, 5, 7].sort(() => Math.random() - 0.5).slice(0, 3);
+        // 60% ascending, 40% mixed/descending — keeps it surprising
+        pool.sort((a, b) => Math.random() > 0.4 ? a - b : b - a);
+
+        pool.forEach((step, i) => {
+          const freq = SCALE[(baseIdx + step) % SCALE.length];
+          const gap  = 0.08 + Math.random() * 0.08; // 80–160ms variable spacing
+          const t0   = ac.currentTime + i * gap;
+
+          const osc = ac.createOscillator();
+          osc.type  = 'sine';
+          osc.frequency.setValueAtTime(freq, t0);
+          // Micro pitch slide → organic, not robotic
+          osc.frequency.linearRampToValueAtTime(freq * 1.003, t0 + 0.05);
+
+          const gn = ac.createGain();
+          osc.connect(gn);
+          gn.connect(dryBus);
+          gn.connect(reverbNode);
+          const vol = 0.065 + Math.random() * 0.025;
+          gn.gain.setValueAtTime(0, t0);
+          gn.gain.linearRampToValueAtTime(vol, t0 + 0.014);
+          gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+          osc.start(t0);
+          osc.stop(t0 + 1.0);
+        });
+      } catch (_) {}
+    }
+
+    // ── Rewarding city-click sound ───────────────────────────
+    // Rich multi-layered chord: root + major third + fifth + octave
+    // with shimmer, gentle attack, long reverb tail
+    function playRewardSound() {
+      try {
+        const ac = initAudio();
+        const t0 = ac.currentTime;
+
+        // Pick a random root from the upper-bright range
+        const baseIdx = 5 + Math.floor(Math.random() * 3);
+        const root = SCALE[baseIdx];
+
+        // Major chord intervals: root, major 3rd, perfect 5th, octave
+        const intervals = [1, 1.26, 1.5, 2.0];
+
+        intervals.forEach((ratio, i) => {
+          const freq = root * ratio;
+          const delay = i * 0.035; // slight stagger for shimmer
+
+          // Main tone — sine for purity
+          const osc = ac.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, t0 + delay);
+          // Gentle upward drift for sparkle
+          osc.frequency.linearRampToValueAtTime(freq * 1.004, t0 + delay + 1.5);
+          const vol = (i === 0 ? 0.10 : i === 3 ? 0.06 : 0.075);
+          sendToMix(osc, vol, 0.02, 2.2, delay);
+          osc.start(t0 + delay);
+          osc.stop(t0 + delay + 2.5);
+
+          // Harmonic shimmer — triangle, one octave up, very soft
+          if (i < 2) {
+            const sh = ac.createOscillator();
+            sh.type = 'triangle';
+            sh.frequency.setValueAtTime(freq * 2, t0 + delay + 0.1);
+            sh.frequency.linearRampToValueAtTime(freq * 2.01, t0 + delay + 1.8);
+            sendToMix(sh, 0.025, 0.08, 1.8, delay + 0.1);
+            sh.start(t0 + delay + 0.1);
+            sh.stop(t0 + delay + 2.0);
+          }
+        });
+
+        // Sub bass layer — warmth
+        const sub = ac.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(root * 0.5, t0);
+        sendToMix(sub, 0.05, 0.04, 1.8);
+        sub.start(t0);
+        sub.stop(t0 + 2.0);
+
+      } catch (_) {}
+    }
+
+    // ── Toast ─────────────────────────────────────────────
+    let toastTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+    }
+
+    // ── Release payoff ────────────────────────────────────
+    function flashCoords() {
+      // Cascade signal bars up to 5, then settle back
+      const bars = document.querySelectorAll('.bar');
+      bars.forEach((b, i) => setTimeout(() => b.classList.add('active'), i * 55));
+      setTimeout(() => updateSignalBars(dragVelocity), 1600);
+      // Flicker lat/lon like a GPS lock
+      ['lat-val', 'lon-val'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('val-flash');
+        void el.offsetWidth; // force reflow to restart animation
+        el.classList.add('val-flash');
+        setTimeout(() => el.classList.remove('val-flash'), 800);
+      });
+    }
+
+    function triggerPayoff(x, y) {
+      spawnBurst(x, y);      // gradient blobs scatter outward
+      spawnRipple();         // concentric rings from globe centre
+      constellLife = 1.0;    // constellation flash on globe
+      flashCoords();         // coord/signal UI lock flicker
+    }
+
+    // ── UTC clock ─────────────────────────────────────────
+    function tickClock() {
+      const d = new Date();
+      const hh = String(d.getUTCHours()).padStart(2,'0');
+      const mm = String(d.getUTCMinutes()).padStart(2,'0');
+      const ss = String(d.getUTCSeconds()).padStart(2,'0');
+      document.getElementById('utc-time').textContent = hh + ':' + mm + ':' + ss + ' UTC';
+    }
+    tickClock();
+    setInterval(tickClock, 1000);
+
+    // ── Animation loop ────────────────────────────────────
+    let t = 0;
+    let lastTs = 0;
+    function tick(ts) {
+      requestAnimationFrame(tick);
+      const dt = lastTs ? (ts - lastTs) / 1000 : 0.016;
+      lastTs = ts;
+      t += 0.012;
+
+      // Update ripple wave
+      updateRipple(dt);
+
+      if (!dragging) {
+        globe.rotation.y += 0.0014;
+        velX *= 0.9;
+        velY *= 0.9;
+
+      }
+      dragVelocity *= 0.88;
+
+      // Seed city particles when dragging, then draw everything
+      maybeSeedCityParticles();
+      drawTrail();
+      drawCityParticles();
+
+      // Constellation flash — rise fast, fade slowly
+      if (constellLife > 0) {
+        constellLife = Math.max(0, constellLife - 0.007); // ~2.4s total
+        const rise = 0.13;
+        const a = constellLife > (1 - rise)
+          ? ((1 - constellLife) / rise) * 0.55       // 0 → 0.55 in first 13%
+          : (constellLife / (1 - rise)) * 0.55;      // 0.55 → 0 over remainder
+        constellMats.forEach(m => { m.opacity = a; });
+      }
+
+      // Pulse city rings
+      markers.forEach(({ ring, offset }) => {
+        const s = 1 + 0.10 * Math.sin(t + offset);
+        ring.scale.setScalar(s);
+        ring.material.opacity = 0.06 + 0.05 * Math.sin(t + offset);
+      });
+
+      renderer.render(scene, camera);
+    }
+    tick();
+
+    // ── Reveal sequence ───────────────────────────────────
+    document.getElementById('ui').classList.add('show');
+    setTimeout(() => document.getElementById('headline').classList.add('show'), 700);
+    setTimeout(() => document.getElementById('tagline').classList.add('show'), 1300);
+    setTimeout(() => document.getElementById('divider').classList.add('show'), 1600);
+    setTimeout(() => document.getElementById('hint').classList.add('show'), 2200);
+
+  })();
+  </script>
+</body>
+</html>
