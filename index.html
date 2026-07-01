@@ -65,6 +65,20 @@
       mix-blend-mode: overlay;
     }
 
+    /* ── Active film grain (animated, over whole site) ─ */
+    #grain-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 9;               /* over globe + trails, below UI text (keeps type crisp) */
+      pointer-events: none;
+      mix-blend-mode: overlay;  /* only blend that adds grit without graying the cream */
+      opacity: 0.9;
+      will-change: contents;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #grain-canvas { display: none; }   /* fall back to the static #grain */
+    }
+
     /* ── Custom cursor ───────────────────────────── */
     #cursor {
       position: fixed;
@@ -312,8 +326,11 @@
   <!-- Particle canvas (city dot trails — sits above globe) -->
   <canvas id="particle-canvas"></canvas>
 
-  <!-- Grain texture overlay -->
+  <!-- Grain texture overlay (static base / reduced-motion fallback) -->
   <div id="grain"></div>
+
+  <!-- Active film grain (animated, boiling noise over the whole site) -->
+  <canvas id="grain-canvas"></canvas>
 
   <!-- Globe canvas -->
   <canvas id="globe-canvas"></canvas>
@@ -409,6 +426,57 @@
     }
     resizeParticle();
     addEventListener('resize', resizeParticle);
+
+    // ── Active film grain ────────────────────────────────
+    // Boiling monochrome noise, re-randomized ~24fps and tiled over the
+    // whole viewport, overlay-blended for a living, filmic grit. Falls back
+    // to the static #grain when the user prefers reduced motion.
+    const grainCanvas = document.getElementById('grain-canvas');
+    const gCtx = grainCanvas.getContext('2d');
+    const prefersReducedMotion =
+      matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const grainMobile    = innerWidth < 768;
+    const GRAIN_TILE     = 256;                          // offscreen noise tile (px)
+    const GRAIN_SCALE    = grainMobile ? 2 : 1;          // half-res backing store on phones
+    const GRAIN_INTERVAL = 1000 / (grainMobile ? 18 : 24); // filmic cadence
+    let   grainW = 0, grainH = 0, lastGrainTs = 0;
+
+    const grainTile = document.createElement('canvas');
+    grainTile.width = grainTile.height = GRAIN_TILE;
+    const gtCtx    = grainTile.getContext('2d');
+    const grainImg = gtCtx.createImageData(GRAIN_TILE, GRAIN_TILE);
+    const grainBuf = new Uint32Array(grainImg.data.buffer); // fast 32-bit writes
+
+    function resizeGrain() {
+      // DPR 1 (grain reads fine at 1:1); backing store scaled down on mobile,
+      // CSS stretches the canvas back to full viewport.
+      grainW = grainCanvas.width  = Math.ceil(innerWidth  / GRAIN_SCALE);
+      grainH = grainCanvas.height = Math.ceil(innerHeight / GRAIN_SCALE);
+    }
+    resizeGrain();
+    addEventListener('resize', resizeGrain);
+
+    function renderGrain() {
+      // Full-range monochrome noise → visible grit even on the light bg
+      for (let i = 0; i < grainBuf.length; i++) {
+        const v = (Math.random() * 256) | 0;
+        grainBuf[i] = (255 << 24) | (v << 16) | (v << 8) | v; // A,B,G,R — monochrome
+      }
+      gtCtx.putImageData(grainImg, 0, 0);
+      const pat = gCtx.createPattern(grainTile, 'repeat');
+      if (!pat) return;
+      gCtx.clearRect(0, 0, grainW, grainH);
+      gCtx.fillStyle = pat;
+      gCtx.fillRect(0, 0, grainW, grainH);
+    }
+
+    const grainOn = !prefersReducedMotion;
+    if (grainOn) {
+      const staticGrain = document.getElementById('grain');
+      if (staticGrain) staticGrain.style.display = 'none'; // active grain replaces it
+      renderGrain();                                       // paint first frame now
+    }
 
     const cityParticles = [];
     const MAX_CITY_PARTICLES = 120;
@@ -1304,6 +1372,12 @@
       maybeSeedCityParticles();
       drawTrail();
       drawCityParticles();
+
+      // Active film grain — throttled to a filmic ~24 fps cadence
+      if (grainOn && ts - lastGrainTs >= GRAIN_INTERVAL) {
+        lastGrainTs = ts;
+        renderGrain();
+      }
 
       // Constellation flash — rise fast, fade slowly
       if (constellLife > 0) {
