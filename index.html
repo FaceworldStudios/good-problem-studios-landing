@@ -740,10 +740,14 @@
         targets.push({ x: (_tv.x * 0.5 + 0.5) * innerWidth, y: (-_tv.y * 0.5 + 0.5) * innerHeight });
       });
       if (!targets.length) return;
-      const PLEN = 4, DMAX = 2.8;                             // spoke length + max random stagger
+      const PLEN = 4, WSPAN = 2.8;                            // spoke length + launch window
+      // launch waves: several spokes share a wave (fire together), others land on
+      // a different wave, plus a few-ms jitter — so it's not one flat simultaneous volley.
+      const nWaves = 3 + Math.floor(Math.random() * 2);
+      const waves = Array.from({ length: nWaves }, (_, i) => (i / (nWaves - 1)) * WSPAN + (Math.random() - 0.5) * 0.5);
       const strokes = [], nodes = [];
       targets.forEach(t => {
-        const delay = Math.random() * DMAX;                  // randomised stagger per spoke
+        const delay = Math.max(0, waves[Math.floor(Math.random() * nWaves)] + (Math.random() - 0.5) * 0.16);
         const dx = ox - t.x, dy = oy - t.y, len = Math.hypot(dx, dy) || 1;   // from city -> clicked
         const nx = -dy / len, ny = dx / len, N = Math.max(6, Math.floor(len / 12));
         const amp = 1.8 + Math.random() * 3.0, seed = Math.random() * 1000, poly = [];
@@ -756,7 +760,7 @@
         nodes.push({ x: t.x, y: t.y, p: 0, delay });         // source city (line starts here)
       });
       nodes.push({ x: ox, y: oy, p: PLEN, delay: 0 });       // clicked city — convergence point, lingers
-      route = { strokes, nodes, t: 0, pmax: PLEN + DMAX };
+      route = { strokes, nodes, t: 0, pmax: PLEN + WSPAN + 0.6 };
     }
 
     function drawRoute(dt) {
