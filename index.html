@@ -723,39 +723,69 @@
           poly.push({ x: a.x + dx * u + nx * w, y: a.y + dy * u + ny * w, p: s + u });
         }
       }
-      route = { poly, nodes: chain, t: 0 };
+      route = { strokes: [poly], nodes: chain.map((c, i) => ({ x: c.x, y: c.y, p: i })), t: 0, pmax: chain.length - 1 };
+    }
+
+    // City-click payoff: lines fan out from the clicked city to EVERY other
+    // front-facing city at once, then dissolve origin-first.
+    function traceCityBurst(originIdx) {
+      _tv.copy(latLonToVec3(CITIES[originIdx][0], CITIES[originIdx][1], 1.02)).applyMatrix4(globe.matrixWorld).project(camera);
+      const ox = (_tv.x * 0.5 + 0.5) * innerWidth, oy = (-_tv.y * 0.5 + 0.5) * innerHeight;
+      const targets = [];
+      CITIES.forEach(([lat, lon], idx) => {
+        if (idx === originIdx) return;
+        _tv.copy(latLonToVec3(lat, lon, 1)).transformDirection(globe.matrixWorld);
+        if (_tv.z < 0.12) return;                             // front-facing only
+        _tv.copy(latLonToVec3(lat, lon, 1.02)).applyMatrix4(globe.matrixWorld).project(camera);
+        targets.push({ x: (_tv.x * 0.5 + 0.5) * innerWidth, y: (-_tv.y * 0.5 + 0.5) * innerHeight });
+      });
+      if (!targets.length) return;
+      const PLEN = 4;                                         // path-param length per spoke
+      const strokes = targets.map(t => {
+        const dx = t.x - ox, dy = t.y - oy, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len, N = Math.max(6, Math.floor(len / 12));
+        const seed = Math.random() * 1000, poly = [];
+        for (let i = 0; i <= N; i++) {
+          const u = i / N;
+          const w = (Math.sin(u * 7.5 + seed) * 3.0 + Math.sin(u * 22 + seed * 1.7) * 1.1) * Math.sin(Math.PI * u);
+          poly.push({ x: ox + dx * u + nx * w, y: oy + dy * u + ny * w, p: u * PLEN });
+        }
+        return poly;
+      });
+      route = { strokes, nodes: [{ x: ox, y: oy, p: 0 }, ...targets.map(t => ({ x: t.x, y: t.y, p: PLEN }))], t: 0, pmax: PLEN };
     }
 
     function drawRoute(dt) {
       if (!route) return;
-      const R = route, segs = R.nodes.length - 1;
-      const LIFE = 6.5, FADE = 3.0;                          // per-point lifespan (in hops)
+      const R = route, LIFE = 6.5, FADE = 3.0;               // per-point lifespan (in hops)
       R.t += dt / 0.17;                                      // quick head travel, ~0.17s/hop
-      if (R.t >= segs + LIFE) { route = null; return; }
-      const headPos = Math.min(R.t, segs);
+      if (R.t >= R.pmax + LIFE) { route = null; return; }
+      const headPos = Math.min(R.t, R.pmax);
       const fade = p => Math.max(0, Math.min(1, (LIFE - (R.t - p)) / FADE));   // origin-first
 
       pCtx.save();
       pCtx.lineJoin = pCtx.lineCap = 'round';
       pCtx.lineWidth = 2.4;
-      let head = R.poly[0];
-      for (let i = 1; i < R.poly.length; i++) {
-        const A = R.poly[i - 1], B = R.poly[i];
-        if (B.p > headPos) break;
-        head = B;
-        const a = fade(B.p);
-        if (a <= 0.02) continue;
-        pCtx.strokeStyle = `rgba(42,96,190,${0.95 * a})`;    // blueprint blue
-        pCtx.beginPath(); pCtx.moveTo(A.x, A.y); pCtx.lineTo(B.x, B.y); pCtx.stroke();
-      }
-      if (R.t < segs) {                                      // bright travelling head
-        pCtx.fillStyle = 'rgba(42,96,190,1)';
-        pCtx.beginPath(); pCtx.arc(head.x, head.y, 2.8, 0, Math.PI * 2); pCtx.fill();
+      for (const poly of R.strokes) {
+        let head = poly[0];
+        for (let i = 1; i < poly.length; i++) {
+          const A = poly[i - 1], B = poly[i];
+          if (B.p > headPos) break;
+          head = B;
+          const a = fade(B.p);
+          if (a <= 0.02) continue;
+          pCtx.strokeStyle = `rgba(42,96,190,${0.95 * a})`;   // blueprint blue
+          pCtx.beginPath(); pCtx.moveTo(A.x, A.y); pCtx.lineTo(B.x, B.y); pCtx.stroke();
+        }
+        if (R.t < R.pmax) {                                   // bright travelling head per stroke
+          pCtx.fillStyle = 'rgba(42,96,190,1)';
+          pCtx.beginPath(); pCtx.arc(head.x, head.y, 2.6, 0, Math.PI * 2); pCtx.fill();
+        }
       }
       pCtx.lineWidth = 1.2;                                  // node crosshairs, age-faded
-      R.nodes.forEach((n, idx) => {
-        if (idx > headPos + 0.4) return;
-        const a = fade(idx);
+      R.nodes.forEach(n => {
+        if (n.p > headPos + 0.4) return;
+        const a = fade(n.p);
         if (a <= 0.02) return;
         pCtx.strokeStyle = `rgba(42,96,190,${0.85 * a})`;
         pCtx.beginPath(); pCtx.arc(n.x, n.y, 4, 0, Math.PI * 2); pCtx.stroke();
@@ -1157,7 +1187,6 @@
 
     function handleGlobeClick(cx, cy) {
       firePulsarBurst();
-      traceCityPath();
       if (dragTotal < 12) {
         const rect = canvas.getBoundingClientRect();
         mouseNDC.x = ((cx - rect.left) / rect.width) * 2 - 1;
@@ -1166,13 +1195,14 @@
         const hits = raycaster.intersectObjects(cityHitTargets);
         if (hits.length > 0) {
           const cityIdx = hits[0].object.userData.cityIndex;
-          startRipple(cityIdx);
           playRewardSound();
           showToast(CITY_NAMES[cityIdx]);
+          traceCityBurst(cityIdx);        // payoff: lines reach every city
           return;
         }
       }
       onPing();
+      traceCityPath();                    // ambient few-city route on empty clicks
     }
 
     canvas.addEventListener('mousedown', e => onDown(e.clientX, e.clientY));
