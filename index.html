@@ -185,12 +185,13 @@
       justify-content: center;
       text-align: center;
       gap: 10px;
+      transform: translateX(-4%);   /* left-weighted composition, per reference */
     }
 
     /* GPS wordmark — real Farada Sans letterforms, over the pulsar map */
     #gps-wordmark {
       font-family: 'Farada Sans', 'Space Grotesk', sans-serif;
-      font-size: clamp(90px, 21vw, 320px);
+      font-size: clamp(36px, 8.4vw, 128px);
       line-height: 0.8;
       letter-spacing: -0.005em;
       color: var(--ink);
@@ -1384,11 +1385,12 @@
     // brightens the spoke the cursor points along, and bursts on every ping.
     const pulsarCanvas = document.getElementById('pulsar-canvas');
     const psCtx = pulsarCanvas.getContext('2d');
+    const gpsWordmark = document.getElementById('gps-wordmark');
     let psW = 0, psH = 0, psCx = 0, psCy = 0, psR = 0;
     function resizePulsar() {
       psW = pulsarCanvas.width  = innerWidth;
       psH = pulsarCanvas.height = innerHeight;
-      psCx = psW / 2; psCy = psH / 2;
+      psCx = psW * 0.43; psCy = psH * 0.47;   // fallback; real origin tracks the wordmark
       psR  = Math.min(psW, psH) * 0.34;
     }
     resizePulsar();
@@ -1411,7 +1413,7 @@
       for (let k = 0; k < n; k++) ticks.push({ pos: 0.16 + rnd() * 0.82, w: 2.5 + rnd() * 7 });
       return { dx: Math.cos(rad), dy: Math.sin(rad), len: d.len, ang: rad, ticks,
                delay: 0.02 + (i / PULSAR_DEFS.length) * 0.5,
-               pulse: rnd(), pulseSpd: 0.05 + rnd() * 0.05, glow: 0 };
+               pulse: rnd(), pulseSpd: 0.03 + rnd() * 0.035, glow: 0 };
     });
 
     let pulsarReveal = 0, pulsarBurst = 0;
@@ -1420,6 +1422,9 @@
     function firePulsarBurst() { pulsarBurst = 1; }
 
     function drawPulsar(dt) {
+      // Anchor the origin to the live wordmark so the G always sits over it
+      const wr = gpsWordmark && gpsWordmark.getBoundingClientRect();
+      if (wr && wr.width) { psCx = wr.left + wr.width * 0.18; psCy = wr.top + wr.height * 0.52; }
       psCtx.clearRect(0, 0, psW, psH);
       dt = Math.min(dt, 0.05);
       if (pulsarReveal < 1) pulsarReveal = Math.min(1, pulsarReveal + dt * 0.6);
@@ -1444,8 +1449,8 @@
         const ex = psCx + L.dx * full * ez, ey = psCy + L.dy * full * ez;
         const nx = -L.dy, ny = L.dx;
 
-        psCtx.strokeStyle = `rgba(18,18,18,${(0.5 + 0.42 * L.glow) * ez})`;
-        psCtx.lineWidth = 1 + 1.5 * L.glow + 0.5 * pulsarBurst;
+        psCtx.strokeStyle = `rgba(18,18,18,${(0.5 + 0.2 * L.glow) * ez})`;
+        psCtx.lineWidth = 1 + 0.6 * L.glow + 0.2 * pulsarBurst;
         psCtx.beginPath(); psCtx.moveTo(psCx, psCy); psCtx.lineTo(ex, ey); psCtx.stroke();
 
         psCtx.lineWidth = 1 + 0.7 * L.glow;
@@ -1453,14 +1458,14 @@
           if (tk.pos > ez) continue;
           const tx = psCx + L.dx * full * tk.pos, ty = psCy + L.dy * full * tk.pos;
           const b = tk.w * (1 + 0.5 * L.glow);
-          psCtx.strokeStyle = `rgba(18,18,18,${(0.55 + 0.4 * L.glow) * ez})`;
+          psCtx.strokeStyle = `rgba(18,18,18,${(0.55 + 0.18 * L.glow) * ez})`;
           psCtx.beginPath(); psCtx.moveTo(tx - nx * b, ty - ny * b); psCtx.lineTo(tx + nx * b, ty + ny * b); psCtx.stroke();
         }
 
         if (ez > 0.97) {
           const px = psCx + L.dx * full * L.pulse, py = psCy + L.dy * full * L.pulse;
-          const pr = 5 + 6 * L.glow + 10 * pulsarBurst;
-          const pa = Math.min(1, (0.35 + 0.55 * L.glow) * (1 - L.pulse * 0.4) + pulsarBurst * 0.6);
+          const pr = 2.5 + 2 * L.glow + 4 * pulsarBurst;
+          const pa = Math.min(0.5, (0.14 + 0.3 * L.glow) * (1 - L.pulse * 0.4) + pulsarBurst * 0.35);
           const g = psCtx.createRadialGradient(px, py, 0, px, py, pr);
           g.addColorStop(0, `rgba(18,18,18,${pa})`); g.addColorStop(1, 'rgba(18,18,18,0)');
           psCtx.fillStyle = g; psCtx.beginPath(); psCtx.arc(px, py, pr, 0, Math.PI * 2); psCtx.fill();
@@ -1468,7 +1473,7 @@
       }
 
       psCtx.fillStyle = `rgba(18,18,18,${0.85 * rev})`;
-      psCtx.beginPath(); psCtx.arc(psCx, psCy, 3 + 3 * pulsarBurst, 0, Math.PI * 2); psCtx.fill();
+      psCtx.beginPath(); psCtx.arc(psCx, psCy, 2.5 + 2 * pulsarBurst, 0, Math.PI * 2); psCtx.fill();
     }
 
     // ── Animation loop ────────────────────────────────────
