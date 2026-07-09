@@ -739,11 +739,11 @@
         head = B;
         const a = fade(B.p);
         if (a <= 0.02) continue;
-        pCtx.strokeStyle = `rgba(26,54,116,${0.95 * a})`;    // blueprint blue
+        pCtx.strokeStyle = `rgba(42,96,190,${0.95 * a})`;    // blueprint blue
         pCtx.beginPath(); pCtx.moveTo(A.x, A.y); pCtx.lineTo(B.x, B.y); pCtx.stroke();
       }
       if (R.t < segs) {                                      // bright travelling head
-        pCtx.fillStyle = 'rgba(26,54,116,1)';
+        pCtx.fillStyle = 'rgba(42,96,190,1)';
         pCtx.beginPath(); pCtx.arc(head.x, head.y, 2.8, 0, Math.PI * 2); pCtx.fill();
       }
       pCtx.lineWidth = 1.2;                                  // node crosshairs, age-faded
@@ -751,7 +751,7 @@
         if (idx > headPos + 0.4) return;
         const a = fade(idx);
         if (a <= 0.02) return;
-        pCtx.strokeStyle = `rgba(26,54,116,${0.85 * a})`;
+        pCtx.strokeStyle = `rgba(42,96,190,${0.85 * a})`;
         pCtx.beginPath(); pCtx.arc(n.x, n.y, 4, 0, Math.PI * 2); pCtx.stroke();
       });
       pCtx.restore();
@@ -833,7 +833,7 @@
             float ink = mix(0.5, 1.0, smoothstep(0.10, 0.90, n));   // uneven coverage
             float a   = uOpacity * ink;
             if (a < 0.012) discard;
-            gl_FragColor = vec4(0.17, 0.34, 0.53, a);   // blueprint ink
+            gl_FragColor = vec4(0.21, 0.45, 0.70, a);   // blueprint ink
           }`
       });
     }
@@ -884,7 +884,7 @@
     // Outer wireframe
     globe.add(new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 64),
-      new THREE.MeshBasicMaterial({ color: 0x2c5580, wireframe: true, transparent: true, opacity: 0.06 })
+      new THREE.MeshBasicMaterial({ color: 0x3468a8, wireframe: true, transparent: true, opacity: 0.06 })
     ));
 
     // ── Ripple overlay sphere ──────────────────────────────
@@ -950,7 +950,7 @@
 
           // Fade as wave wraps to antipode and overall decay
           float fade = 1.0 - smoothstep(0.6, 1.0, uProgress);
-          float alpha = (ring * 0.45 + leading) * fade;
+          float alpha = (ring * 0.28 + leading * 0.55) * fade;
 
           // Secondary ripple — thinner echo trailing behind
           float echo = abs(angDist - waveFront * 0.7);
@@ -980,13 +980,10 @@
       rippleTime = 0;
       rippleActive = true;
 
-      // Fully randomized colors — three hues spread at least 60° apart
-      const h1 = Math.random() * 360;
-      const h2 = (h1 + 60 + Math.random() * 180) % 360;
-      const h3 = (h2 + 60 + Math.random() * 180) % 360;
-      rippleUniforms.uColor1.value.setHSL(h1 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
-      rippleUniforms.uColor2.value.setHSL(h2 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
-      rippleUniforms.uColor3.value.setHSL(h3 / 360, 0.7 + Math.random() * 0.3, 0.45 + Math.random() * 0.2);
+      // Blueprint-blue tones — cohesive with the palette, no rainbow
+      rippleUniforms.uColor1.value.setHSL(0.58, 0.52, 0.60);
+      rippleUniforms.uColor2.value.setHSL(0.60, 0.62, 0.50);
+      rippleUniforms.uColor3.value.setHSL(0.55, 0.44, 0.66);
     }
 
     function updateRipple(dt) {
@@ -1028,14 +1025,14 @@
 
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(0.004, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0x2c5580, transparent: true, opacity: 0.55 })
+        new THREE.MeshBasicMaterial({ color: 0x3468a8, transparent: true, opacity: 0.55 })
       );
       dot.position.copy(pos);
       globe.add(dot);
 
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(0.013, 0.0015, 6, 32),
-        new THREE.MeshBasicMaterial({ color: 0x2c5580, transparent: true, opacity: 0.14 })
+        new THREE.MeshBasicMaterial({ color: 0x3468a8, transparent: true, opacity: 0.14 })
       );
       ring.position.copy(pos);
       ring.lookAt(0, 0, 0);
