@@ -723,7 +723,7 @@
           poly.push({ x: a.x + dx * u + nx * w, y: a.y + dy * u + ny * w, p: s + u });
         }
       }
-      route = { strokes: [poly], nodes: chain.map((c, i) => ({ x: c.x, y: c.y, p: i })), t: 0, pmax: chain.length - 1 };
+      route = { strokes: [{ poly, delay: 0 }], nodes: chain.map((c, i) => ({ x: c.x, y: c.y, p: i, delay: 0 })), t: 0, pmax: chain.length - 1 };
     }
 
     // City-click payoff: lines fan out from the clicked city to EVERY other
@@ -740,19 +740,22 @@
         targets.push({ x: (_tv.x * 0.5 + 0.5) * innerWidth, y: (-_tv.y * 0.5 + 0.5) * innerHeight });
       });
       if (!targets.length) return;
-      const PLEN = 4;                                         // path-param length per spoke
-      const strokes = targets.map(t => {
+      const PLEN = 4, DMAX = 2.8;                             // spoke length + max random stagger
+      const strokes = [], nodes = [{ x: ox, y: oy, p: 0, delay: 0 }];
+      targets.forEach(t => {
+        const delay = Math.random() * DMAX;                  // randomised stagger per spoke
         const dx = t.x - ox, dy = t.y - oy, len = Math.hypot(dx, dy) || 1;
         const nx = -dy / len, ny = dx / len, N = Math.max(6, Math.floor(len / 12));
-        const seed = Math.random() * 1000, poly = [];
+        const amp = 1.8 + Math.random() * 3.0, seed = Math.random() * 1000, poly = [];
         for (let i = 0; i <= N; i++) {
           const u = i / N;
-          const w = (Math.sin(u * 7.5 + seed) * 3.0 + Math.sin(u * 22 + seed * 1.7) * 1.1) * Math.sin(Math.PI * u);
+          const w = (Math.sin(u * 7.5 + seed) * amp + Math.sin(u * 22 + seed * 1.7) * amp * 0.35) * Math.sin(Math.PI * u);
           poly.push({ x: ox + dx * u + nx * w, y: oy + dy * u + ny * w, p: u * PLEN });
         }
-        return poly;
+        strokes.push({ poly, delay });
+        nodes.push({ x: t.x, y: t.y, p: PLEN, delay });
       });
-      route = { strokes, nodes: [{ x: ox, y: oy, p: 0 }, ...targets.map(t => ({ x: t.x, y: t.y, p: PLEN }))], t: 0, pmax: PLEN };
+      route = { strokes, nodes, t: 0, pmax: PLEN + DMAX };
     }
 
     function drawRoute(dt) {
@@ -760,32 +763,33 @@
       const R = route, LIFE = 6.5, FADE = 3.0;               // per-point lifespan (in hops)
       R.t += dt / 0.17;                                      // quick head travel, ~0.17s/hop
       if (R.t >= R.pmax + LIFE) { route = null; return; }
-      const headPos = Math.min(R.t, R.pmax);
-      const fade = p => Math.max(0, Math.min(1, (LIFE - (R.t - p)) / FADE));   // origin-first
-
       pCtx.save();
       pCtx.lineJoin = pCtx.lineCap = 'round';
       pCtx.lineWidth = 2.4;
-      for (const poly of R.strokes) {
+      for (const st of R.strokes) {
+        const poly = st.poly, lt = R.t - (st.delay || 0);    // this stroke's local time (staggered)
+        if (lt <= 0) continue;
+        const sMax = poly[poly.length - 1].p;
         let head = poly[0];
         for (let i = 1; i < poly.length; i++) {
           const A = poly[i - 1], B = poly[i];
-          if (B.p > headPos) break;
+          if (B.p > lt) break;
           head = B;
-          const a = fade(B.p);
+          const a = Math.max(0, Math.min(1, (LIFE - (lt - B.p)) / FADE));   // origin-first
           if (a <= 0.02) continue;
           pCtx.strokeStyle = `rgba(42,96,190,${0.95 * a})`;   // blueprint blue
           pCtx.beginPath(); pCtx.moveTo(A.x, A.y); pCtx.lineTo(B.x, B.y); pCtx.stroke();
         }
-        if (R.t < R.pmax) {                                   // bright travelling head per stroke
+        if (lt < sMax) {                                      // bright travelling head
           pCtx.fillStyle = 'rgba(42,96,190,1)';
           pCtx.beginPath(); pCtx.arc(head.x, head.y, 2.6, 0, Math.PI * 2); pCtx.fill();
         }
       }
       pCtx.lineWidth = 1.2;                                  // node crosshairs, age-faded
       R.nodes.forEach(n => {
-        if (n.p > headPos + 0.4) return;
-        const a = fade(n.p);
+        const lt = R.t - (n.delay || 0);
+        if (n.p > lt) return;
+        const a = Math.max(0, Math.min(1, (LIFE - (lt - n.p)) / FADE));
         if (a <= 0.02) return;
         pCtx.strokeStyle = `rgba(42,96,190,${0.85 * a})`;
         pCtx.beginPath(); pCtx.arc(n.x, n.y, 4, 0, Math.PI * 2); pCtx.stroke();
@@ -1245,9 +1249,24 @@
     let droneGainNode = null;
     let audioReady = false;
 
-    // A minor pentatonic, two octaves
-    const SCALE      = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 784];
-    const NOTE_NAMES = ['A3','C4','D4','E4','G4','A4','C5','D5','E5','G5'];
+    // Minor-pentatonic intervals transposed to a root that shifts with globe
+    // longitude — moving around the globe changes the musical key.
+    const SCALE_INTERVALS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];   // minor pentatonic, 2 octaves
+    const BASE_ROOT = 220;                                          // A3
+    const KEY_STEPS = [0, 3, 7, 5, 10, 8];                          // per-region root (semitones): A C E D G F
+    const NOTE_LETTERS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    function currentRoot() {
+      const lon = ((globe.rotation.y * 180 / Math.PI) % 360 + 360) % 360;
+      return BASE_ROOT * Math.pow(2, KEY_STEPS[Math.floor(lon / (360 / KEY_STEPS.length)) % KEY_STEPS.length] / 12);
+    }
+    function noteFreq(i) {
+      const n = SCALE_INTERVALS.length;
+      return currentRoot() * Math.pow(2, SCALE_INTERVALS[((i % n) + n) % n] / 12);
+    }
+    function noteName(freq) {
+      const m = Math.round(12 * Math.log2(freq / 440) + 69);
+      return NOTE_LETTERS[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+    }
 
     function initAudio() {
       if (audioReady) return audioCtx;
@@ -1311,9 +1330,9 @@
       lastTone = now;
       try {
         const ac = initAudio();
-        const idx  = Math.floor(((lat + 90) / 180) * SCALE.length) % SCALE.length;
-        const freq = SCALE[idx];
-        document.getElementById('note-name').textContent = NOTE_NAMES[idx];
+        const idx  = Math.floor(((lat + 90) / 180) * SCALE_INTERVALS.length) % SCALE_INTERVALS.length;
+        const freq = noteFreq(idx);
+        document.getElementById('note-name').textContent = noteName(freq);
 
         const vol = Math.min(0.18, velocity * 0.009);
 
@@ -1335,7 +1354,7 @@
 
         // Note display
         const nd = document.getElementById('note-display');
-        nd.textContent = '♩ ' + NOTE_NAMES[idx];
+        nd.textContent = '♩ ' + noteName(freq);
         nd.classList.add('show');
         clearTimeout(nd._t);
         nd._t = setTimeout(() => nd.classList.remove('show'), 900);
@@ -1352,8 +1371,8 @@
       try {
         const ac = initAudio();
         const lat = -(globe.rotation.x * 180 / Math.PI);
-        const idx  = Math.floor(((lat + 90) / 180) * SCALE.length) % SCALE.length;
-        const freq = SCALE[idx] * 0.5; // Octave down — deeper, like a satellite hum
+        const idx  = Math.floor(((lat + 90) / 180) * SCALE_INTERVALS.length) % SCALE_INTERVALS.length;
+        const freq = noteFreq(idx) * 0.5; // Octave down — deeper, like a satellite hum
 
         const osc = ac.createOscillator();
         osc.type = 'triangle';
@@ -1381,7 +1400,7 @@
         pool.sort((a, b) => Math.random() > 0.4 ? a - b : b - a);
 
         pool.forEach((step, i) => {
-          const freq = SCALE[(baseIdx + step) % SCALE.length];
+          const freq = noteFreq(baseIdx + step);
           const gap  = 0.08 + Math.random() * 0.08; // 80–160ms variable spacing
           const t0   = ac.currentTime + i * gap;
 
@@ -1415,7 +1434,7 @@
 
         // Pick a random root from the upper-bright range
         const baseIdx = 5 + Math.floor(Math.random() * 3);
-        const root = SCALE[baseIdx];
+        const root = noteFreq(baseIdx);
 
         // Major chord intervals: root, major 3rd, perfect 5th, octave
         const intervals = [1, 1.26, 1.5, 2.0];
