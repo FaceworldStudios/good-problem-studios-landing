@@ -197,7 +197,7 @@
       justify-content: center;
       text-align: center;
       gap: 10px;
-      transform: translate(-4%, 31px);
+      transform: translate(-4%, -48px);   /* caps visual centre on the equator (font overflows its line-box) */
     }
 
     /* GPS wordmark — real Farada Sans letterforms, over the pulsar map */
@@ -1406,7 +1406,7 @@
       psW = pulsarCanvas.width  = innerWidth;
       psH = pulsarCanvas.height = innerHeight;
       psCx = psW * 0.43; psCy = psH * 0.47;   // fallback; real origin tracks the wordmark
-      psR  = Math.min(psW, psH) * 0.20;
+      psR  = Math.min(psW, psH) * 0.32;
     }
     resizePulsar();
     addEventListener('resize', resizePulsar);
