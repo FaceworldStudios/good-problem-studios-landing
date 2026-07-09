@@ -197,7 +197,7 @@
       justify-content: center;
       text-align: center;
       gap: 5px;
-      transform: translateX(-4%);   /* Y set by centreHero() so the caps centre stays on the equator at any size */
+      transform: translate(0px, 0px);   /* set by centreHero(): GPS centred + caps on equator */
     }
 
     /* GPS wordmark — real Farada Sans letterforms, over the pulsar map */
@@ -1416,7 +1416,7 @@
     function centreHero() {
       const hero = document.getElementById('hero');
       if (!hero || !gpsWordmark) return;
-      hero.style.transform = 'translate(-4%, 0px)';
+      hero.style.transform = 'translate(0px, 0px)';
       const cs = getComputedStyle(gpsWordmark);
       const r  = gpsWordmark.getBoundingClientRect();
       const mctx = document.createElement('canvas').getContext('2d');
@@ -1424,7 +1424,8 @@
       const m  = mctx.measureText('GPS');
       const hl = (parseFloat(cs.lineHeight) - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2;
       const capsCentre = r.top + hl + m.fontBoundingBoxAscent - m.actualBoundingBoxAscent / 2 + m.actualBoundingBoxDescent / 2;
-      hero.style.transform = 'translate(-4%, ' + Math.round(innerHeight / 2 - capsCentre) + 'px)';
+      const dx = Math.round(innerWidth / 2 - (r.left + r.width / 2));   // GPS horizontally centred
+      hero.style.transform = 'translate(' + dx + 'px, ' + Math.round(innerHeight / 2 - capsCentre) + 'px)';
     }
     centreHero();
     addEventListener('resize', centreHero);
@@ -1492,8 +1493,8 @@
         for (const tk of L.ticks) {
           if (tk.pos > ez) continue;
           const tx = psCx + L.dx * full * tk.pos, ty = psCy + L.dy * full * tk.pos;
-          const b = tk.w;
-          psCtx.strokeStyle = `rgba(18,18,18,${0.55 * ez})`;
+          const b = tk.w * (psR / 303) * (1 + 0.2 * L.glow);   // scale with pulsar; subtle hover extend
+          psCtx.strokeStyle = `rgba(18,18,18,${(0.55 + 0.12 * L.glow) * ez})`;
           psCtx.beginPath(); psCtx.moveTo(tx - nx * b, ty - ny * b); psCtx.lineTo(tx + nx * b, ty + ny * b); psCtx.stroke();
         }
 
