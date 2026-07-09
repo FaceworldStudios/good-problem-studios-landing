@@ -159,14 +159,14 @@
     }
 
     #status-block {
-      font-family: 'Space Mono', monospace;
-      font-size: 8.5px;
-      letter-spacing: .14em;
-      color: var(--ink-dim);
-      text-transform: uppercase;
-      text-align: right;
-      line-height: 2.2;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      pointer-events: auto;   /* clickable inside the pointer-events:none UI layer */
     }
+    .social { color: var(--ink-dim); display: block; transition: color .25s ease, transform .25s ease; }
+    .social:hover { color: var(--ink); transform: translateY(-1px); }
+    .social svg { display: block; width: 19px; height: 19px; }
     #status-block .live {
       color: var(--ink);
       display: inline-flex;
@@ -384,8 +384,16 @@
       </div>
 
       <div id="status-block">
-        <div class="live"><span class="blinker"></span> Signal Active</div>
-        <div id="utc-time">00:00:00 UTC</div>
+        <a class="social" href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" title="Instagram">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.1"/><circle cx="17.2" cy="6.8" r="1.15" fill="currentColor" stroke="none"/>
+          </svg>
+        </a>
+        <a class="social" href="mailto:" aria-label="Email" title="Email">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.6 7.2l8.4 5.8 8.4-5.8"/>
+          </svg>
+        </a>
       </div>
     </div>
 
@@ -1460,7 +1468,7 @@
       const hh = String(d.getUTCHours()).padStart(2,'0');
       const mm = String(d.getUTCMinutes()).padStart(2,'0');
       const ss = String(d.getUTCSeconds()).padStart(2,'0');
-      document.getElementById('utc-time').textContent = hh + ':' + mm + ':' + ss + ' UTC';
+      const _u = document.getElementById('utc-time'); if (_u) _u.textContent = hh + ':' + mm + ':' + ss + ' UTC';
     }
     tickClock();
     setInterval(tickClock, 1000);
