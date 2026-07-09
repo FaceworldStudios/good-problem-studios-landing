@@ -11,6 +11,13 @@
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+    @font-face {
+      font-family: 'Farada Sans';
+      src: url('farada-sans.ttf') format('truetype');
+      font-weight: normal;
+      font-display: block;
+    }
+
     :root {
       --bg:         #f3f2ee;
       --ink:        #1a1a1a;
@@ -49,6 +56,14 @@
       position: fixed;
       inset: 0;
       z-index: 2;
+      pointer-events: none;
+    }
+
+    /* ── Pulsar map (radiating reactive signal lines, behind wordmark) ─ */
+    #pulsar-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 4;
       pointer-events: none;
     }
 
@@ -172,48 +187,28 @@
       gap: 10px;
     }
 
-    #headline {
-      font-size: clamp(30px, 4.5vw, 62px);
-      font-weight: 300;
-      letter-spacing: -.01em;
-      line-height: 1.12;
+    /* GPS wordmark — real Farada Sans letterforms, over the pulsar map */
+    #gps-wordmark {
+      font-family: 'Farada Sans', 'Space Grotesk', sans-serif;
+      font-size: clamp(90px, 21vw, 320px);
+      line-height: 0.8;
+      letter-spacing: -0.005em;
+      color: var(--ink);
+      user-select: none;
       opacity: 0;
-      transform: translateY(18px);
-      transition: opacity 1.2s cubic-bezier(.16,1,.3,1), transform 1.2s cubic-bezier(.16,1,.3,1);
+      transform: translateY(12px) scale(0.98);
+      transition: opacity 1.1s cubic-bezier(.16,1,.3,1), transform 1.1s cubic-bezier(.16,1,.3,1);
     }
-    #headline em { font-style: italic; font-weight: 500; }
-    #headline.show { opacity: 1; transform: translateY(0); }
+    #gps-wordmark.show { opacity: 1; transform: none; }
 
-    #tagline {
-      font-family: 'Space Mono', monospace;
-      font-size: clamp(8px, 1vw, 10px);
-      letter-spacing: .28em;
-      text-transform: uppercase;
-      color: var(--ink-mid);
+    /* Hydrogen hyperfine mark (pulsar-map unit symbol) */
+    #hydrogen {
+      margin-top: clamp(8px, 2vw, 26px);
       opacity: 0;
-      transition: opacity 1s .4s;
+      transition: opacity 1.2s 1.1s;
     }
-    #tagline.show { opacity: 1; }
-
-    #divider {
-      width: 40px; height: 1px;
-      background: var(--ink-faint);
-      margin: 4px auto;
-      opacity: 0;
-      transition: opacity 1s .7s;
-    }
-    #divider.show { opacity: 1; }
-
-    #hint {
-      font-family: 'Space Mono', monospace;
-      font-size: 8px;
-      letter-spacing: .22em;
-      text-transform: uppercase;
-      color: var(--ink-dim);
-      opacity: 0;
-      transition: opacity 1s 1.4s;
-    }
-    #hint.show { opacity: 1; }
+    #hydrogen.show { opacity: 0.6; }
+    #hydrogen svg { display: block; }
 
     /* Footer */
     #footer {
@@ -326,6 +321,9 @@
   <!-- Particle canvas (city dot trails — sits above globe) -->
   <canvas id="particle-canvas"></canvas>
 
+  <!-- Pulsar map — radiating reactive signal lines -->
+  <canvas id="pulsar-canvas"></canvas>
+
   <!-- Grain texture overlay (static base / reduced-motion fallback) -->
   <div id="grain"></div>
 
@@ -365,10 +363,17 @@
     </div>
 
     <div id="center">
-      <div id="headline">We help <em>artists</em><br>find their way.</div>
-      <div id="tagline">Good Problem Studios &nbsp;·&nbsp; Navigating Sound</div>
-      <div id="divider"></div>
-      <div id="hint"></div>
+      <div id="gps-wordmark" aria-label="Good Problem Studios">GPS</div>
+      <div id="hydrogen" aria-hidden="true">
+        <svg width="74" height="42" viewBox="0 0 74 42" fill="none" stroke="#1a1a1a" stroke-width="1.3">
+          <line x1="20" y1="21" x2="54" y2="21"/>
+          <circle cx="18" cy="21" r="9"/>
+          <circle cx="56" cy="21" r="9"/>
+          <line x1="18" y1="5" x2="18" y2="13"/>
+          <line x1="56" y1="5" x2="56" y2="13"/>
+          <text x="37" y="41" font-family="'Space Mono',monospace" font-size="9" fill="#1a1a1a" stroke="none" text-anchor="middle">G</text>
+        </svg>
+      </div>
     </div>
 
     <div id="footer">
@@ -719,6 +724,28 @@
     );
     globe.add(fillMesh);
 
+    // Risograph line material — object-space ink grain breaks the stroke up
+    // into an uneven, hand-printed texture that stays fixed to the globe.
+    function risoLineMaterial(opacity) {
+      return new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false,
+        uniforms: { uOpacity: { value: opacity } },
+        vertexShader: `
+          varying vec3 vP;
+          void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `
+          uniform float uOpacity; varying vec3 vP;
+          float hash(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+          void main(){
+            float n   = hash(floor(vP.xy*130.0 + vP.z*77.0));
+            float ink = mix(0.5, 1.0, smoothstep(0.10, 0.90, n));   // uneven coverage
+            float a   = uOpacity * ink;
+            if (a < 0.012) discard;
+            gl_FragColor = vec4(0.09, 0.09, 0.09, a);
+          }`
+      });
+    }
+
     // Lat lines
     function addLatLine(latDeg, segments, opacity) {
       const pts = [];
@@ -733,7 +760,7 @@
       }
       globe.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity })
+        risoLineMaterial(opacity)
       ));
     }
 
@@ -751,7 +778,7 @@
       }
       globe.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity })
+        risoLineMaterial(opacity)
       ));
     }
 
@@ -1034,6 +1061,7 @@
     function onPing() { playPing(); }
 
     function handleGlobeClick(cx, cy) {
+      firePulsarBurst();
       if (dragTotal < 12) {
         const rect = canvas.getBoundingClientRect();
         mouseNDC.x = ((cx - rect.left) / rect.width) * 2 - 1;
@@ -1335,6 +1363,7 @@
       spawnRipple();         // concentric rings from globe centre
       constellLife = 1.0;    // constellation flash on globe
       flashCoords();         // coord/signal UI lock flicker
+      firePulsarBurst();     // pulsar broadcasts a synchronized burst
     }
 
     // ── UTC clock ─────────────────────────────────────────
@@ -1347,6 +1376,100 @@
     }
     tickClock();
     setInterval(tickClock, 1000);
+
+    // ── Animation loop ────────────────────────────────────
+    // ── Pulsar map — radiating reactive signal lines ─────
+    // Rebuilt as live vector art (not a flat image) so it can react: it draws
+    // outward from the centre, emits travelling signal pulses along each spoke,
+    // brightens the spoke the cursor points along, and bursts on every ping.
+    const pulsarCanvas = document.getElementById('pulsar-canvas');
+    const psCtx = pulsarCanvas.getContext('2d');
+    let psW = 0, psH = 0, psCx = 0, psCy = 0, psR = 0;
+    function resizePulsar() {
+      psW = pulsarCanvas.width  = innerWidth;
+      psH = pulsarCanvas.height = innerHeight;
+      psCx = psW / 2; psCy = psH / 2;
+      psR  = Math.min(psW, psH) * 0.34;
+    }
+    resizePulsar();
+    addEventListener('resize', resizePulsar);
+
+    function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let x=Math.imul(a^a>>>15,1|a); x=x+Math.imul(x^x>>>7,61|x)^x; return ((x^x>>>14)>>>0)/4294967296; }; }
+
+    // angles: screen degrees, 0 = east, CCW positive (up = 90)
+    const PULSAR_DEFS = [
+      {a:2,len:2.05},{a:35,len:1.20},{a:60,len:0.78},{a:78,len:0.98},
+      {a:90,len:0.60},{a:108,len:1.05},{a:125,len:0.72},{a:145,len:0.88},
+      {a:168,len:0.92},{a:178,len:1.08},{a:190,len:0.82},{a:205,len:0.70},
+      {a:220,len:0.78},{a:250,len:0.66},{a:270,len:0.92},{a:300,len:1.28},{a:320,len:0.72}
+    ];
+    const pulsarLines = PULSAR_DEFS.map((d, i) => {
+      const rnd = mulberry32(i * 2654435761 + 9973);
+      const rad = -d.a * Math.PI / 180;
+      const ticks = [];
+      const n = 6 + Math.floor(rnd() * 9);
+      for (let k = 0; k < n; k++) ticks.push({ pos: 0.16 + rnd() * 0.82, w: 2.5 + rnd() * 7 });
+      return { dx: Math.cos(rad), dy: Math.sin(rad), len: d.len, ang: rad, ticks,
+               delay: 0.02 + (i / PULSAR_DEFS.length) * 0.5,
+               pulse: rnd(), pulseSpd: 0.05 + rnd() * 0.05, glow: 0 };
+    });
+
+    let pulsarReveal = 0, pulsarBurst = 0;
+    let pointerX = 0, pointerY = 0;
+    addEventListener('mousemove', e => { pointerX = e.clientX; pointerY = e.clientY; });
+    function firePulsarBurst() { pulsarBurst = 1; }
+
+    function drawPulsar(dt) {
+      psCtx.clearRect(0, 0, psW, psH);
+      dt = Math.min(dt, 0.05);
+      if (pulsarReveal < 1) pulsarReveal = Math.min(1, pulsarReveal + dt * 0.6);
+      const rev = pulsarReveal * pulsarReveal * (3 - 2 * pulsarReveal);
+      if (pulsarBurst > 0) pulsarBurst = Math.max(0, pulsarBurst - dt * 1.2);
+
+      const pdx = pointerX - psCx, pdy = pointerY - psCy;
+      const pAng = Math.atan2(pdy, pdx);
+      const cursorOn = Math.hypot(pdx, pdy) > 10;
+
+      for (const L of pulsarLines) {
+        const p = Math.max(0, Math.min(1, (rev - L.delay) / 0.42));
+        if (p <= 0) continue;
+        const ez = p * p * (3 - 2 * p);
+        const full = L.len * psR;
+
+        let align = 0;
+        if (cursorOn) { let da = Math.abs(L.ang - pAng); da = Math.min(da, Math.PI * 2 - da); align = Math.max(0, 1 - da / 0.30); }
+        L.glow += (align - L.glow) * Math.min(1, dt * 9);
+        L.pulse = (L.pulse + dt * L.pulseSpd) % 1;
+
+        const ex = psCx + L.dx * full * ez, ey = psCy + L.dy * full * ez;
+        const nx = -L.dy, ny = L.dx;
+
+        psCtx.strokeStyle = `rgba(18,18,18,${(0.5 + 0.42 * L.glow) * ez})`;
+        psCtx.lineWidth = 1 + 1.5 * L.glow + 0.5 * pulsarBurst;
+        psCtx.beginPath(); psCtx.moveTo(psCx, psCy); psCtx.lineTo(ex, ey); psCtx.stroke();
+
+        psCtx.lineWidth = 1 + 0.7 * L.glow;
+        for (const tk of L.ticks) {
+          if (tk.pos > ez) continue;
+          const tx = psCx + L.dx * full * tk.pos, ty = psCy + L.dy * full * tk.pos;
+          const b = tk.w * (1 + 0.5 * L.glow);
+          psCtx.strokeStyle = `rgba(18,18,18,${(0.55 + 0.4 * L.glow) * ez})`;
+          psCtx.beginPath(); psCtx.moveTo(tx - nx * b, ty - ny * b); psCtx.lineTo(tx + nx * b, ty + ny * b); psCtx.stroke();
+        }
+
+        if (ez > 0.97) {
+          const px = psCx + L.dx * full * L.pulse, py = psCy + L.dy * full * L.pulse;
+          const pr = 5 + 6 * L.glow + 10 * pulsarBurst;
+          const pa = Math.min(1, (0.35 + 0.55 * L.glow) * (1 - L.pulse * 0.4) + pulsarBurst * 0.6);
+          const g = psCtx.createRadialGradient(px, py, 0, px, py, pr);
+          g.addColorStop(0, `rgba(18,18,18,${pa})`); g.addColorStop(1, 'rgba(18,18,18,0)');
+          psCtx.fillStyle = g; psCtx.beginPath(); psCtx.arc(px, py, pr, 0, Math.PI * 2); psCtx.fill();
+        }
+      }
+
+      psCtx.fillStyle = `rgba(18,18,18,${0.85 * rev})`;
+      psCtx.beginPath(); psCtx.arc(psCx, psCy, 3 + 3 * pulsarBurst, 0, Math.PI * 2); psCtx.fill();
+    }
 
     // ── Animation loop ────────────────────────────────────
     let t = 0;
@@ -1372,6 +1495,9 @@
       maybeSeedCityParticles();
       drawTrail();
       drawCityParticles();
+
+      // Reactive pulsar map
+      drawPulsar(dt);
 
       // Active film grain — throttled to a filmic ~24 fps cadence
       if (grainOn && ts - lastGrainTs >= GRAIN_INTERVAL) {
@@ -1402,10 +1528,8 @@
 
     // ── Reveal sequence ───────────────────────────────────
     document.getElementById('ui').classList.add('show');
-    setTimeout(() => document.getElementById('headline').classList.add('show'), 700);
-    setTimeout(() => document.getElementById('tagline').classList.add('show'), 1300);
-    setTimeout(() => document.getElementById('divider').classList.add('show'), 1600);
-    setTimeout(() => document.getElementById('hint').classList.add('show'), 2200);
+    setTimeout(() => document.getElementById('gps-wordmark').classList.add('show'), 600);
+    setTimeout(() => document.getElementById('hydrogen').classList.add('show'), 1500);
 
   })();
   </script>
