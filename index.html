@@ -693,16 +693,14 @@
         pts.push({ x: (_tv.x * 0.5 + 0.5) * innerWidth, y: (-_tv.y * 0.5 + 0.5) * innerHeight });
       });
       if (pts.length < 3) return;
-      // nearest-neighbour chain from the left-most city (caps the hop count)
-      let cur = pts.reduce((a, b) => (b.x < a.x ? b : a), pts[0]);
+      // randomised route: random start city, random length, semi-random hops
+      const target = 4 + Math.floor(Math.random() * Math.min(5, pts.length - 2));
+      let cur = pts[Math.floor(Math.random() * pts.length)];
       const pool = pts.filter(p => p !== cur), chain = [cur];
-      while (chain.length < 8 && pool.length) {
-        let bi = 0, bd = Infinity;
-        for (let i = 0; i < pool.length; i++) {
-          const d = (pool[i].x - cur.x) ** 2 + (pool[i].y - cur.y) ** 2;
-          if (d < bd) { bd = d; bi = i; }
-        }
-        cur = pool.splice(bi, 1)[0]; chain.push(cur);
+      while (chain.length < target && pool.length) {
+        pool.sort((a, b) => ((a.x - cur.x) ** 2 + (a.y - cur.y) ** 2) - ((b.x - cur.x) ** 2 + (b.y - cur.y) ** 2));
+        const pick = Math.floor(Math.random() * Math.min(pool.length, 3));   // pick among the nearest few
+        cur = pool.splice(pick, 1)[0]; chain.push(cur);
       }
       // dense wiggly polyline through the chain, each point tagged with path-param p
       const poly = [];
