@@ -680,6 +680,79 @@
       }
     }
 
+    // ── City route trace ─────────────────────────────────
+    // A thick, slightly-wiggly hard line that quickly travels city → city,
+    // tracing a path across the front-facing cities, then fades.
+    let route = null;
+    function traceCityPath() {
+      const pts = [];
+      CITIES.forEach(([lat, lon]) => {
+        _tv.copy(latLonToVec3(lat, lon, 1)).transformDirection(globe.matrixWorld);
+        if (_tv.z < 0.16) return;                              // front-facing only
+        _tv.copy(latLonToVec3(lat, lon, 1.02)).applyMatrix4(globe.matrixWorld).project(camera);
+        pts.push({ x: (_tv.x * 0.5 + 0.5) * innerWidth, y: (-_tv.y * 0.5 + 0.5) * innerHeight });
+      });
+      if (pts.length < 3) return;
+      // nearest-neighbour chain from the left-most city (caps the hop count)
+      let cur = pts.reduce((a, b) => (b.x < a.x ? b : a), pts[0]);
+      const pool = pts.filter(p => p !== cur), chain = [cur];
+      while (chain.length < 8 && pool.length) {
+        let bi = 0, bd = Infinity;
+        for (let i = 0; i < pool.length; i++) {
+          const d = (pool[i].x - cur.x) ** 2 + (pool[i].y - cur.y) ** 2;
+          if (d < bd) { bd = d; bi = i; }
+        }
+        cur = pool.splice(bi, 1)[0]; chain.push(cur);
+      }
+      route = { pts: chain, t: 0, alpha: 1, seed: Math.random() * 1000 };
+    }
+
+    function wigglySeg(a, b, frac, seed) {
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;                    // perpendicular
+      const N = Math.max(10, Math.floor(len / 9));
+      const wob = s => (Math.sin(s * 7.5 + seed) * 3.4 + Math.sin(s * 22.0 + seed * 1.7) * 1.2) * Math.sin(Math.PI * s);
+      pCtx.strokeStyle = 'rgba(18,24,36,0.92)';
+      pCtx.lineWidth = 2.4;
+      pCtx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const s = i / N; if (s > frac) break;
+        const w = wob(s), px = a.x + dx * s + nx * w, py = a.y + dy * s + ny * w;
+        i === 0 ? pCtx.moveTo(px, py) : pCtx.lineTo(px, py);
+      }
+      pCtx.stroke();
+      if (frac < 1) {                                         // bright travelling head
+        const s = frac, w = wob(s);
+        const hx = a.x + dx * s + nx * w, hy = a.y + dy * s + ny * w;
+        pCtx.fillStyle = 'rgba(18,24,36,1)';
+        pCtx.beginPath(); pCtx.arc(hx, hy, 2.8, 0, Math.PI * 2); pCtx.fill();
+      }
+    }
+
+    function drawRoute(dt) {
+      if (!route) return;
+      const R = route, segs = R.pts.length - 1;
+      R.t += dt / 0.17;                                      // ~0.17s per hop (quick)
+      if (R.t >= segs) {                                     // hold the finished path, then fade
+        R.hold = (R.hold || 0) + dt;
+        if (R.hold > 0.7) { R.alpha -= dt * 0.9; if (R.alpha <= 0) { route = null; return; } }
+      }
+      const head = Math.min(Math.floor(R.t), segs - 1);
+      const headFrac = R.t >= segs ? 1 : (R.t - head);
+      pCtx.save();
+      pCtx.globalAlpha = Math.max(0, Math.min(1, R.alpha));
+      pCtx.lineJoin = pCtx.lineCap = 'round';
+      for (let s = 0; s <= head; s++) wigglySeg(R.pts[s], R.pts[s + 1], s < head ? 1 : headFrac, R.seed + s * 13);
+      pCtx.strokeStyle = 'rgba(18,24,36,0.85)';               // node crosshairs at reached cities
+      pCtx.lineWidth = 1.2;
+      const reached = head + (headFrac > 0.55 ? 1 : 0);
+      for (let s = 0; s <= reached && s < R.pts.length; s++) {
+        const p = R.pts[s];
+        pCtx.beginPath(); pCtx.arc(p.x, p.y, 4, 0, Math.PI * 2); pCtx.stroke();
+      }
+      pCtx.restore();
+    }
+
     // ── Renderer ────────────────────────────────────────
     const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
                      || innerWidth < 768;
@@ -756,7 +829,7 @@
             float ink = mix(0.5, 1.0, smoothstep(0.10, 0.90, n));   // uneven coverage
             float a   = uOpacity * ink;
             if (a < 0.012) discard;
-            gl_FragColor = vec4(0.09, 0.09, 0.09, a);
+            gl_FragColor = vec4(0.17, 0.34, 0.53, a);   // blueprint ink
           }`
       });
     }
@@ -807,7 +880,7 @@
     // Outer wireframe
     globe.add(new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 64),
-      new THREE.MeshBasicMaterial({ color: 0x1a1a1a, wireframe: true, transparent: true, opacity: 0.04 })
+      new THREE.MeshBasicMaterial({ color: 0x2c5580, wireframe: true, transparent: true, opacity: 0.06 })
     ));
 
     // ── Ripple overlay sphere ──────────────────────────────
@@ -951,14 +1024,14 @@
 
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(0.004, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.45 })
+        new THREE.MeshBasicMaterial({ color: 0x2c5580, transparent: true, opacity: 0.55 })
       );
       dot.position.copy(pos);
       globe.add(dot);
 
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(0.013, 0.0015, 6, 32),
-        new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.10 })
+        new THREE.MeshBasicMaterial({ color: 0x2c5580, transparent: true, opacity: 0.14 })
       );
       ring.position.copy(pos);
       ring.lookAt(0, 0, 0);
@@ -1077,6 +1150,7 @@
 
     function handleGlobeClick(cx, cy) {
       firePulsarBurst();
+      traceCityPath();
       if (dragTotal < 12) {
         const rect = canvas.getBoundingClientRect();
         mouseNDC.x = ((cx - rect.left) / rect.width) * 2 - 1;
@@ -1376,7 +1450,7 @@
     function triggerPayoff(x, y) {
       spawnBurst(x, y);      // gradient blobs scatter outward
       spawnRipple();         // concentric rings from globe centre
-      constellLife = 1.0;    // constellation flash on globe
+      traceCityPath();       // trace a route across the cities
       flashCoords();         // coord/signal UI lock flicker
       firePulsarBurst();     // pulsar broadcasts a synchronized burst
     }
@@ -1536,6 +1610,7 @@
       maybeSeedCityParticles();
       drawTrail();
       drawCityParticles();
+      drawRoute(dt);
 
       // Reactive pulsar map
       drawPulsar(dt);
