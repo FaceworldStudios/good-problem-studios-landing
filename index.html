@@ -1465,23 +1465,23 @@
         const ex = psCx + L.dx * full * ez, ey = psCy + L.dy * full * ez;
         const nx = -L.dy, ny = L.dx;
 
-        psCtx.strokeStyle = `rgba(18,18,18,${(0.5 + 0.06 * L.glow) * ez})`;
-        psCtx.lineWidth = 1 + 0.18 * L.glow + 0.08 * pulsarBurst;
+        psCtx.strokeStyle = `rgba(18,18,18,${0.5 * ez})`;
+        psCtx.lineWidth = 1;
         psCtx.beginPath(); psCtx.moveTo(psCx, psCy); psCtx.lineTo(ex, ey); psCtx.stroke();
 
-        psCtx.lineWidth = 1 + 0.18 * L.glow;
+        psCtx.lineWidth = 1;
         for (const tk of L.ticks) {
           if (tk.pos > ez) continue;
           const tx = psCx + L.dx * full * tk.pos, ty = psCy + L.dy * full * tk.pos;
-          const b = tk.w * (1 + 0.5 * L.glow);
-          psCtx.strokeStyle = `rgba(18,18,18,${(0.55 + 0.06 * L.glow) * ez})`;
+          const b = tk.w;
+          psCtx.strokeStyle = `rgba(18,18,18,${0.55 * ez})`;
           psCtx.beginPath(); psCtx.moveTo(tx - nx * b, ty - ny * b); psCtx.lineTo(tx + nx * b, ty + ny * b); psCtx.stroke();
         }
 
         if (ez > 0.97) {
           const px = psCx + L.dx * full * L.pulse, py = psCy + L.dy * full * L.pulse;
-          const pr = 1.4 + 0.8 * L.glow + 1.6 * pulsarBurst;
-          const pa = Math.min(0.24, (0.07 + 0.12 * L.glow) * (1 - L.pulse * 0.4) + pulsarBurst * 0.16);
+          const pr = 1.2;
+          const pa = Math.min(0.08, 0.06 * (1 - L.pulse * 0.4));
           const g = psCtx.createRadialGradient(px, py, 0, px, py, pr);
           g.addColorStop(0, `rgba(18,18,18,${pa})`); g.addColorStop(1, 'rgba(18,18,18,0)');
           psCtx.fillStyle = g; psCtx.beginPath(); psCtx.arc(px, py, pr, 0, Math.PI * 2); psCtx.fill();
@@ -1489,7 +1489,7 @@
       }
 
       psCtx.fillStyle = `rgba(18,18,18,${0.85 * rev})`;
-      psCtx.beginPath(); psCtx.arc(psCx, psCy, 2 + 1 * pulsarBurst, 0, Math.PI * 2); psCtx.fill();
+      psCtx.beginPath(); psCtx.arc(psCx, psCy, 2, 0, Math.PI * 2); psCtx.fill();
     }
 
     // ── Animation loop ────────────────────────────────────
