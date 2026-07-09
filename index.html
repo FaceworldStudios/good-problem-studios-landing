@@ -741,20 +741,21 @@
       });
       if (!targets.length) return;
       const PLEN = 4, DMAX = 2.8;                             // spoke length + max random stagger
-      const strokes = [], nodes = [{ x: ox, y: oy, p: 0, delay: 0 }];
+      const strokes = [], nodes = [];
       targets.forEach(t => {
         const delay = Math.random() * DMAX;                  // randomised stagger per spoke
-        const dx = t.x - ox, dy = t.y - oy, len = Math.hypot(dx, dy) || 1;
+        const dx = ox - t.x, dy = oy - t.y, len = Math.hypot(dx, dy) || 1;   // from city -> clicked
         const nx = -dy / len, ny = dx / len, N = Math.max(6, Math.floor(len / 12));
         const amp = 1.8 + Math.random() * 3.0, seed = Math.random() * 1000, poly = [];
         for (let i = 0; i <= N; i++) {
           const u = i / N;
           const w = (Math.sin(u * 7.5 + seed) * amp + Math.sin(u * 22 + seed * 1.7) * amp * 0.35) * Math.sin(Math.PI * u);
-          poly.push({ x: ox + dx * u + nx * w, y: oy + dy * u + ny * w, p: u * PLEN });
+          poly.push({ x: t.x + dx * u + nx * w, y: t.y + dy * u + ny * w, p: u * PLEN });
         }
         strokes.push({ poly, delay });
-        nodes.push({ x: t.x, y: t.y, p: PLEN, delay });
+        nodes.push({ x: t.x, y: t.y, p: 0, delay });         // source city (line starts here)
       });
+      nodes.push({ x: ox, y: oy, p: PLEN, delay: 0 });       // clicked city — convergence point, lingers
       route = { strokes, nodes, t: 0, pmax: PLEN + DMAX };
     }
 
